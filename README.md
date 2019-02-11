@@ -1,3 +1,3 @@
 # DDP
 
-## DDP = Deep Deep Pa
+DDP = Deep Deep Pa
