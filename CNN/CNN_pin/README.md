@@ -1,5 +1,9 @@
 CNN
 ===========
+# Reference
+ - http://www.wildml.com/2015/12/implementing-a-cnn-for-text-classification-in-tensorflow/
+ - https://github.com/dennybritz/cnn-text-classification-tf
+ 
 # Requirements
  - Python 3
  - Tensorflow > 0.12
@@ -42,7 +46,3 @@ cat ./runs/1550584483/checkpoints/../prediction.csv
 middle earth    1       1
 effective but too tepid biopic  1       1
 ```
-
-# Reference
- - http://www.wildml.com/2015/12/implementing-a-cnn-for-text-classification-in-tensorflow/
- - https://github.com/dennybritz/cnn-text-classification-tf
