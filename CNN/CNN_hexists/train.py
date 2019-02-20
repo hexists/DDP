@@ -1,4 +1,4 @@
-#!/usr/bin/eny python
+#!/usr/bin/env python
 
 import tensorflow as tf
 import numpy as np
@@ -35,7 +35,7 @@ tf.flags.DEFINE_integer('num_checkpoints', 5, 'Number of checkpoints to store(de
 tf.flags.DEFINE_boolean('allow_soft_placement', True, 'Allow device soft device placement')
 tf.flags.DEFINE_boolean('log_device_placement', False, 'Log placement of ops on devices')
 
-FLAGS = tf.flag.FLAGS
+FLAGS = tf.flags.FLAGS
 
 def preprocess():
     # Data Preparation
@@ -46,22 +46,22 @@ def preprocess():
     x_test, y = data_helpers.load_data_and_labels(FLAGS.positive_data_file, FLAGS.negative_data_file)
 
     # Build vocabulary
-    max_document_length = max([len(x.split(' ') for x in x_text)])
+    max_document_length = max([len(x.split(' ')) for x in x_test])
     vocab_preprocessor = learn.preprocessing.VocabularyProcessor(max_document_length)
-    x = np.array(list(vocab_preprocessor.fit_transform(x_text)))
+    x = np.array(list(vocab_preprocessor.fit_transform(x_test)))
 
     # Randomly shuffle data
     np.random.seed(10)
-    shuffle_indices = np.random.permutation(np.arrange(len(y)))
+    shuffle_indices = np.random.permutation(np.arange(len(y)))
     x_shuffled = x[shuffle_indices]
     y_shuffled = y[shuffle_indices]
 
     # Split train/test set
     dev_sample_index = -1 * int(FLAGS.dev_sample_percentage * float(len(y)))
-    x_train, x_dev = x_shuffled[:dev_sample_index], x_shuffled[dev_sample_index]
-    y_train, y_dev = y_shuffled[:dev_sample_index], x_shuffled[dev_sample_index]
+    x_train, x_dev = x_shuffled[:dev_sample_index], x_shuffled[dev_sample_index:]
+    y_train, y_dev = y_shuffled[:dev_sample_index], y_shuffled[dev_sample_index:]
 
-    del x, y, x_shffled, y_shuffled
+    del x, y, x_shuffled, y_shuffled
 
     print('Vocabulary Size: {:d}'.format(len(vocab_preprocessor.vocabulary_)))
     print('Train/Dev split: {:d}/{:d}'.format(len(y_train), len(y_dev)))
@@ -94,7 +94,7 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
 
             # Keep track of gradient values and sparsity (optional)
             grad_summaries = []
-            for g, v in grad_and_vars:
+            for g, v in grads_and_vars:
                 if g is not None:
                     grad_hist_summary = tf.summary.histogram('{}/grad/hist'.format(v.name), g)
                     sparsity_summary = tf.summary.scalar('{}/grad/sparsity'.format(v.name), tf.nn.zero_fraction(g))
@@ -126,7 +126,7 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
             checkpoint_prefix = os.path.join(checkpoint_dir, 'model')
             if not os.path.exists(checkpoint_dir):
                 os.makedirs(checkpoint_dir)
-            server = tf.train.Saver(tf.global_variables(), max_to_keep=FLAGS.num_checkpoints)
+            saver = tf.train.Saver(tf.global_variables(), max_to_keep=FLAGS.num_checkpoints)
 
             # Write vocabulary
             vocab_processor.save(os.path.join(out_dir, 'vocab'))
@@ -174,7 +174,7 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
             for batch in batches:
                 x_batch, y_batch = zip(*batch)
                 train_step(x_batch, y_batch)
-                current_steip = tf.train.global_step(sess, global_step)
+                current_step = tf.train.global_step(sess, global_step)
                 if current_step % FLAGS.evaluate_every == 0:
                     print('\nEvaluation:')
                     dev_step(x_dev, y_dev, writer=dev_summary_writer)
