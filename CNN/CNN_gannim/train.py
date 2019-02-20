@@ -107,8 +107,6 @@ def get_tfconfig():
 
 def train(x_train, y_train, vocab_processor, x_dev, y_dev):
     config = get_tfconfig()
-    init = tf.global_variables_initializer()
-    ##
     with tf.Graph().as_default():
         with tf.Session(config=config) as sess:
             with sess.as_default():
