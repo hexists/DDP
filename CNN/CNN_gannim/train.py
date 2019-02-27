@@ -25,6 +25,25 @@ EVAL_EVERY = 100
 CHECKPOINT_EVERY = 100
 NUM_EPOCHS = 200
 ## https://github.com/dennybritz/cnn-text-classification-tf/blob/master/train.py
+    
+embedding_dir = './word2vec/'
+EMBEDDING_DIMS = 300
+MAX_NB_WORDS = 200000000000
+def load_word2vec(f_data):
+    for sentences, _ in f_data:
+        print(f_data)
+    sys.exit(1)
+    nb_words = min(MAX_NB_WORDS, len(word_index))
+    filename = os.path.join(embedding_dir, 'GoogleNews-vectors-negative300.bin')
+    import gensim
+    embedding_matrix = np.zeros((nb_words + 1, EMBEDDING_DIMS))
+    wv_model = gensim.models.word2vec.Word2Vec.load_word2vec_Format(filename, binary=True)
+    print('found %s word vectors.'.format(len(wv_model.vocab)))
+    for word, i in word_index.items():
+        if i > MAX_NB_WORDS and word in wv_model.vocab:
+            embedding_matrix[i] = wv_model[word]
+    return embedding_matrix 
+
 def preprocess():
     # load data
     x_text, y, max_document_length = load_xy()
@@ -46,6 +65,7 @@ def preprocess():
     # debugging print 
     print("vocab size : {}".format(len(vocab_processor.vocabulary_)))
     print("train/dev split : {}/{}".format(len(y_train), len(y_dev)))
+    #embedding_matrix = load_word2vec(list(zip(x_train, y_train)))
     return x_train, y_train, vocab_processor, x_dev, y_dev
 
 def train(x_train, y_train, vocab_processor, x_dev, y_dev):
@@ -64,6 +84,7 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                 print("writing to {}".format(out_dir))
                 # gradients summaries
                 grad_summaries = []
+                accuracy_list = []
                 for g, v in grads_vars:
                     if g is not None:
                         grad_hist_summary = tf.summary.histogram("{}/grad/hist".format(v.name), g)
@@ -101,8 +122,13 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                     step, summaries, loss, acc = sess.run([gstep, dev_summary_op, cnn.loss, cnn.accuracy], feed_dict)
                     time_str = datetime.datetime.now().isoformat()
                     print("{}: step {}. loss {}, acc {}".format(time_str, step, loss, acc))
-                    if writer:
-                        writer.add_summary(summaries, step)
+                    ##
+                    max_acc = max(accuracy_list) if len(accuracy_list) > 2 else 0
+                    if max_acc > acc:
+                        print("update {} -> {}, length {}".format(max_acc, acc, len(accuracy_list)))
+                        accuracy_list.append(acc)
+                        if writer:
+                            writer.add_summary(summaries, step)
                     
                 data = list(zip(x_train, y_train))
                 batches = batch_iter(data, BATCH_SIZE, NUM_EPOCHS)
@@ -117,10 +143,17 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                     if cur_step % CHECKPOINT_EVERY == 0:
                         path = saver.save(sess, checkpoint_prefix, global_step=cur_step)
                         print("Saved model checkpoint to {}\n".format(path))
-    
+                    if len(accuracy_list) > 6:
+                        max_acc = max(accuracy_list)
+                        mm = 5
+                        for idx, iacc in enumerate(accuracy_list[-5:]):
+                            if max_acc > iacc: mm-=1
+                        if mm == 0: 
+                            break
+            
 def main():
     x_train, y_train, vocab_processor, x_dev, y_dev = preprocess()
-    train(x_train, y_train, vocab_processor, x_dev, y_dev)
+    train(x_train, y_train, vocab_processor, x_dev, y_dev) #, wv_model)
     
 if __name__ == '__main__':
     main()
