@@ -16,39 +16,39 @@ class CNN(object):
             self.embedded_chars = tf.nn.embedding_lookup(self.embedding_weight, self.x)
             # [tokens, embedd size, 1]
             self.embedded_chars_expanded = tf.expand_dims(self.embedded_chars, -1)
-            pooled_outputs = []
-            for i, filter_size in enumerate(filter_sizes):
-                with tf.name_scope("conv-maxpool-{}".format(filter_size)):
-                    # num_filters = filter 개수
-                    # filter size = filter 사이즈
-                    filter_shape = [filter_size, embedding_size, 1, num_filters]
-                    w = tf.Variable(tf.truncated_normal(filter_shape, stddev=0.1), name="w")
-                    b = tf.Variable(tf.constant(0.1, shape=[num_filters]), name="b")
-                    conv = tf.nn.conv2d(self.embedded_chars_expanded, w, strides=[1, 1, 1, 1], padding="VALID", name="conv")
-                    # activation function
-                    h = tf.nn.relu(tf.nn.bias_add(conv, b), name="relu")
-                    # maxpooling 
-                    pooled = tf.nn.max_pool(h, ksize=[1, sequence_length - filter_size + 1, 1, 1], strides=[1, 1, 1, 1], padding="VALID", name="pool")
-                    pooled_outputs.append(pooled)
-            # combine
-            num_filters_total = num_filters * len(filter_sizes)
-            self.h_pool = tf.concat(pooled_outputs, 3)
-            self.h_pool_flat = tf.reshape(self.h_pool, [-1, num_filters_total])
-            # dropout 
-            with tf.name_scope("dropout"):
-                self.h_drop = tf.nn.dropout(self.h_pool_flat, self.keep_prob)
-            with tf.name_scope("output"):
-                w = tf.get_variable("w", shape=[num_filters_total, num_classes], initializer=tf.contrib.layers.xavier_initializer())
-                b = tf.Variable(tf.constant(0.1, shape=[num_classes]), name="b")
-                l2_loss += tf.nn.l2_loss(w)
-                l2_loss += tf.nn.l2_loss(b)
-                self.scores = tf.nn.xw_plus_b(self.h_drop, w, b, name="scores")
-                self.predict = tf.argmax(self.scores, 1, name="predict")
-            # loss
-            with tf.name_scope("loss"):
-                losses = tf.nn.softmax_cross_entropy_with_logits(logits=self.scores, labels=self.y)
-                self.loss = tf.reduce_mean(losses) + l2_reg_lambda * l2_loss
-            # accuracy
-            with tf.name_scope("accuracy"):
-                correct_pred= tf.equal(self.predict, tf.argmax(self.y, 1))
-                self.accuracy = tf.reduce_mean(tf.cast(correct_pred, "float"), name="accuracy")
+        pooled_outputs = []
+        for i, filter_size in enumerate(filter_sizes):
+            with tf.name_scope("conv-maxpool-{}".format(filter_size)):
+                # num_filters = filter 개수
+                # filter size = filter 사이즈
+                filter_shape = [filter_size, embedding_size, 1, num_filters]
+                w = tf.Variable(tf.truncated_normal(filter_shape, stddev=0.1), name="w")
+                b = tf.Variable(tf.constant(0.1, shape=[num_filters]), name="b")
+                conv = tf.nn.conv2d(self.embedded_chars_expanded, w, strides=[1, 1, 1, 1], padding="VALID", name="conv")
+                # activation function
+                h = tf.nn.relu(tf.nn.bias_add(conv, b), name="relu")
+                # maxpooling 
+                pooled = tf.nn.max_pool(h, ksize=[1, sequence_length - filter_size + 1, 1, 1], strides=[1, 1, 1, 1], padding="VALID", name="pool")
+                pooled_outputs.append(pooled)
+        # combine
+        num_filters_total = num_filters * len(filter_sizes)
+        self.h_pool = tf.concat(pooled_outputs, 3)
+        self.h_pool_flat = tf.reshape(self.h_pool, [-1, num_filters_total])
+        # dropout 
+        with tf.name_scope("dropout"):
+            self.h_drop = tf.nn.dropout(self.h_pool_flat, self.keep_prob)
+        with tf.name_scope("output"):
+            w = tf.get_variable("w", shape=[num_filters_total, num_classes], initializer=tf.contrib.layers.xavier_initializer())
+            b = tf.Variable(tf.constant(0.1, shape=[num_classes]), name="b")
+            l2_loss += tf.nn.l2_loss(w)
+            l2_loss += tf.nn.l2_loss(b)
+            self.scores = tf.nn.xw_plus_b(self.h_drop, w, b, name="scores")
+            self.predict = tf.argmax(self.scores, 1, name="predict")
+        # loss
+        with tf.name_scope("loss"):
+            losses = tf.nn.softmax_cross_entropy_with_logits(logits=self.scores, labels=self.y)
+            self.loss = tf.reduce_mean(losses) + l2_reg_lambda * l2_loss
+        # accuracy
+        with tf.name_scope("accuracy"):
+            correct_pred= tf.equal(self.predict, tf.argmax(self.y, 1))
+            self.accuracy = tf.reduce_mean(tf.cast(correct_pred, "float"), name="accuracy")
