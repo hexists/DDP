@@ -8,6 +8,7 @@ import datetime
 import data_helpers
 from text_cnn import TextCNN
 from tensorflow.contrib import learn
+import gensim
 
 # Parameters
 # ==================================================
@@ -18,7 +19,8 @@ tf.flags.DEFINE_string("positive_data_file", "./data/rt-polaritydata/rt-polarity
 tf.flags.DEFINE_string("negative_data_file", "./data/rt-polaritydata/rt-polarity.neg", "Data source for the negative data.")
 
 # Model Hyperparameters
-tf.flags.DEFINE_integer("embedding_dim", 128, "Dimensionality of character embedding (default: 128)")
+tf.flags.DEFINE_string("word2vec", None, "Word2vec file with pre-trained embeddings (default: None)")
+tf.flags.DEFINE_integer("embedding_dim", 300, "Dimensionality of character embedding (default: 128)")
 tf.flags.DEFINE_string("filter_sizes", "2,3,4,5", "Comma-separated filter sizes (default: '3,4,5')")
 tf.flags.DEFINE_integer("num_filters", 128, "Number of filters per filter size (default: 128)")
 tf.flags.DEFINE_float("dropout_keep_prob", 0.5, "Dropout keep probability (default: 0.5)")
@@ -139,6 +141,39 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
             # Initialize all variables
             sess.run(tf.global_variables_initializer())
 
+            if FLAGS.word2vec:
+                # Initial matrix with random uniform
+                initW = np.random.uniform(-0.25,0.25,(len(vocab_processor.vocabulary_), FLAGS.embedding_dim))
+
+                # load any vectors from the word2vec
+                print("Load word2vec file {}\n".format(FLAGS.word2vec))
+                wv_model = gensim.models.KeyedVectors.load_word2vec_format(FLAGS.word2vec, binary=True)
+                vocab_dict = vocab_processor.vocabulary_._mapping
+                for word, i in vocab_dict.items():
+                    if word in wv_model.vocab:
+                        initW[i] = wv_model[word]
+                '''
+                with open(FLAGS.word2vec, "rb") as f:
+                    header = f.readline()
+                    vocab_size, layer1_size = map(int, header.split())
+                    binary_len = np.dtype('float32').itemsize * layer1_size
+                    for line in range(vocab_size):
+                        word = []
+                        while True:
+                            ch = f.read(1)
+                            if ch == ' ':
+                                word = ''.join(word)
+                                break
+                            if ch != '\n':
+                                word.append(ch)   
+                        idx = vocab_processor.vocabulary_.get(word)
+                        if idx != 0:
+                            initW[idx] = np.fromstring(f.read(binary_len), dtype='float32')  
+                        else:
+                            f.read(binary_len)    
+                '''
+                sess.run(cnn.W.assign(initW))
+
             def train_step(x_batch, y_batch):
                 """
                 A single training step
@@ -187,6 +222,8 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                 if current_step % FLAGS.checkpoint_every == 0:
                     path = saver.save(sess, checkpoint_prefix, global_step=current_step)
                     print("Saved model checkpoint to {}\n".format(path))
+                if current_step == 3000:
+                    break
 
 def main(argv=None):
     x_train, y_train, vocab_processor, x_dev, y_dev = preprocess()
