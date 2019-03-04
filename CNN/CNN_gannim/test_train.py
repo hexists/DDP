@@ -14,7 +14,7 @@ from common import get_tfconfig
 from params import BATCH_SIZE
 
 ##
-EMBEDDING_DIM = 300 
+EMBEDDING_DIM = 128
 FILTER_SIZES = "3,4,5"
 NUM_FILTERS = 128
 KEEP_PROB = 0.5
@@ -29,7 +29,6 @@ NUM_EPOCHS = 200
 embedding_dir = './word2vec/'
 EMBEDDING_DIMS = 300
 MAX_NB_WORDS = 200000000000
-
 def load_word2vec(vocab_processor):
     vocab_dict = vocab_processor.vocabulary_._mapping
     nb_words = min(MAX_NB_WORDS, len(vocab_dict))
@@ -37,9 +36,9 @@ def load_word2vec(vocab_processor):
     import gensim
     embedding_matrix = np.zeros((nb_words + 1, EMBEDDING_DIMS))
     wv_model = gensim.models.KeyedVectors.load_word2vec_format(filename, binary=True)
-    print 'found {} word vectors.'.format(len(wv_model.vocab))
+    print 'found %s word vectors.'.format(len(wv_model.vocab))
     for word, i in vocab_dict.items():
-        if word in wv_model.vocab:
+        if i > MAX_NB_WORDS and word in wv_model.vocab:
             embedding_matrix[i] = wv_model[word]
     return embedding_matrix 
 
@@ -65,14 +64,14 @@ def preprocess():
     print("vocab size : {}".format(len(vocab_processor.vocabulary_)))
     print("train/dev split : {}/{}".format(len(y_train), len(y_dev)))
     embedding_matrix = load_word2vec(vocab_processor)
-    return x_train, y_train, vocab_processor, x_dev, y_dev, embedding_matrix
+    return x_train, y_train, vocab_processor, x_dev, y_dev
 
-def train(x_train, y_train, vocab_processor, x_dev, y_dev, embedding_matrix):
+def train(x_train, y_train, vocab_processor, x_dev, y_dev):
     config = get_tfconfig()
     with tf.Graph().as_default():
         with tf.Session(config=config) as sess:
             with sess.as_default():
-                cnn = CNN(x_train.shape[1], y_train.shape[1], len(vocab_processor.vocabulary_), EMBEDDING_DIM, list(map(int, FILTER_SIZES.split(","))), NUM_FILTERS, L2_REG_LAMBDA, embedding_matrix)
+                cnn = CNN(x_train.shape[1], y_train.shape[1], len(vocab_processor.vocabulary_), EMBEDDING_DIM, list(map(int, FILTER_SIZES.split(","))), NUM_FILTERS, L2_REG_LAMBDA)
                 gstep = tf.Variable(0,  name="gstep", trainable=False)
                 optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
                 grads_vars = optimizer.compute_gradients(cnn.loss)
@@ -132,13 +131,6 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev, embedding_matrix):
                 batches = batch_iter(data, BATCH_SIZE, NUM_EPOCHS)
                 for batch in batches:
                     x_bat, y_bat = zip(*batch)
-                    feed_dict = {cnn.x : x_bat, cnn.y : y_bat, cnn.keep_prob : KEEP_PROB}
-                    """
-                    embedding_weight = sess.run([cnn.embedding_weight], feed_dict)
-                    print np.shape(embedding_weight)
-                    sys.exit(0)
-
-                    """
                     train_step(x_bat, y_bat)
                     cur_step = tf.train.global_step(sess, gstep)
                     if cur_step % EVAL_EVERY == 0:
@@ -157,8 +149,8 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev, embedding_matrix):
                             break
             
 def main():
-    x_train, y_train, vocab_processor, x_dev, y_dev, embedding_matrix = preprocess()
-    train(x_train, y_train, vocab_processor, x_dev, y_dev, embedding_matrix) #, wv_model)
+    x_train, y_train, vocab_processor, x_dev, y_dev = preprocess()
+    #train(x_train, y_train, vocab_processor, x_dev, y_dev) #, wv_model)
     
 if __name__ == '__main__':
     main()

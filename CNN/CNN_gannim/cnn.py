@@ -4,15 +4,20 @@ import numpy as np
 import tensorflow as tf
 
 class CNN(object):
-    def __init__(self, sequence_length, num_classes, vocab_size, embedding_size, filter_sizes, num_filters, l2_reg_lambda=0.0):
+    def __init__(self, sequence_length, num_classes, vocab_size, embedding_size, filter_sizes, num_filters, l2_reg_lambda=0.0, embedding_matrix=None):
         self.x = tf.placeholder(tf.int32, [None, sequence_length], name="x")
         self.y = tf.placeholder(tf.int32, [None, num_classes], name="y")
         self.keep_prob = tf.placeholder(tf.float32, name="keep_prob") # dropout
         ## ??
         l2_loss  = tf.constant(0.0)
         with tf.device("/gpu:0"), tf.name_scope("embedding"):
-            self.embedding_weight = tf.Variable(tf.random_uniform([vocab_size, embedding_size], -1.0, 1.0), name="embedding_weight")
             # [tokens, embedd size]
+            self.embed_arr = np.array(embedding_matrix) #[vocab_size, embedding_dim]
+            self.embed_init = tf.constant_initializer(self.embed_arr)
+            self.embedding_weight = tf.get_variable(name="embedding_weight", initializer=self.embed_init, shape=self.embed_arr.shape, trainable=False)
+            self.embedding_weight = tf.reshape(self.embedding_weight, [-1, embedding_size])
+            ##
+            #self.embedding_weight = tf.Variable(tf.random_uniform([vocab_size, embedding_size], -1.0, 1.0), name="embedding_weight")
             self.embedded_chars = tf.nn.embedding_lookup(self.embedding_weight, self.x)
             # [tokens, embedd size, 1]
             self.embedded_chars_expanded = tf.expand_dims(self.embedded_chars, -1)

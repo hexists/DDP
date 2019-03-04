@@ -2,7 +2,7 @@
 
 
 pid=`ps -ef | grep "port 7788" | grep -v "grep" | cut -d " " -f3`
-if [ $pid == ""]; then
+if [ "$pid" == "" ]; then
     pid=`ps -ef | grep "port 7788" | grep -v "grep" | cut -d " " -f2`
 fi
 
