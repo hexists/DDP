@@ -36,3 +36,16 @@ DennyBritz 코드를 base로 성능 향상을 위해 word2vec을 추가해 본 �
   - word2vec을 추가한 뒤 최고 성능은 dev set acc 78.99%
   - 기존 대비 약 4% 향상
 
+## 추가 실험
+
+- word2vec을 cnn class에 전달하여, get_variable로 할당해서 사용하도록 해봤습니다.
+- 사용 방법이 다르고, 결과에는 차이가 없습니다.
+- code
+  - text_cnn_w2v_v2.py
+  - train_w2v_v2.py
+  
+  ```
+  # Embedding layer
+  with tf.device('/cpu:0'), tf.name_scope("embedding"), tf.variable_scope("embedding"):
+      self.W = tf.get_variable(name="W", initializer=tf.constant_initializer(self.initMatrix), shape=self.initMatrix.shape, trainable=False)
+  ```
