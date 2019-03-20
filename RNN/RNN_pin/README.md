@@ -3,6 +3,7 @@ CNN
 # Reference
  - https://towardsdatascience.com/lstm-by-example-using-tensorflow-feb0c1968537
  - https://raw.githubusercontent.com/roatienza/Deep-Learning-Experiments/master/Experiments/Tensorflow/RNN/rnn_words.py
+ - https://www.guru99.com/rnn-tutorial.html
  
 # Requirements
  - Python 3
