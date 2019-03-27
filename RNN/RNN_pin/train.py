@@ -20,17 +20,21 @@ tf.flags.DEFINE_string("negative_data_file", "./data/rt-polaritydata/rt-polarity
 # Model Hyperparameters
 tf.flags.DEFINE_integer("embedding_dim", 100, "Dimensionality of character embedding (default: 128)")
 tf.flags.DEFINE_integer("num_hidden", 200, " lstm hidden size default: 200)")
-tf.flags.DEFINE_float("dropout_keep_prob", 0.5, "Dropout keep probability (default: 0.5)")
+tf.flags.DEFINE_float("dropout_keep_prob", 0.75, "Dropout keep probability (default: 0.5)")
 
-# Training parameters
+# Training Parameters
 tf.flags.DEFINE_integer("batch_size", 64, "Batch Size (default: 64)")
 tf.flags.DEFINE_integer("num_epochs", 200, "Number of training epochs (default: 200)")
 tf.flags.DEFINE_integer("evaluate_every", 100, "Evaluate model on dev set after this many steps (default: 100)")
 tf.flags.DEFINE_integer("checkpoint_every", 100, "Save model after this many steps (default: 100)")
 tf.flags.DEFINE_integer("num_checkpoints", 5, "Number of checkpoints to store (default: 5)")
+
 # Misc Parameters
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
 tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
+
+# Debug Parameters
+tf.flags.DEFINE_boolean("debug", False, "for debug")
 
 FLAGS = tf.flags.FLAGS
 print("\nParameters:")
@@ -80,7 +84,7 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
         sess = tf.Session(config=session_conf)
         with sess.as_default():
             rnn = TextRNN(
-                sequence_length=x_train.shape[1],
+                max_sequence_length=x_train.shape[1],
                 num_classes=y_train.shape[1],
                 vocab_size=len(vocab_processor.vocabulary_),
                 embedding_size=FLAGS.embedding_dim,
@@ -135,13 +139,14 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
             # Initialize all variables
             sess.run(tf.global_variables_initializer())
 
-            def train_step(x_batch, y_batch):
+            def train_step(x_batch, sequence_length, y_batch):
                 """
                 A single training step
                 """
                 feed_dict = {
                   rnn.input_x: x_batch,
                   rnn.input_y: y_batch,
+                  rnn.sequence_length: sequence_length,
                   rnn.dropout_keep_prob: FLAGS.dropout_keep_prob
                 }
                 _, step, summaries, loss, accuracy = sess.run(
@@ -151,13 +156,14 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                 print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
                 train_summary_writer.add_summary(summaries, step)
 
-            def dev_step(x_batch, y_batch, writer=None):
+            def dev_step(x_batch, sequence_length, y_batch, writer=None):
                 """
                 Evaluates model on a dev set
                 """
                 feed_dict = {
                   rnn.input_x: x_batch,
                   rnn.input_y: y_batch,
+                  rnn.sequence_length: sequence_length,
                   rnn.dropout_keep_prob: 1.0
                 }
                 step, summaries, loss, accuracy = sess.run(
@@ -168,6 +174,17 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                 if writer:
                     writer.add_summary(summaries, step)
 
+            def get_len_list(x_batch):
+                len_list = []
+                for x in x_batch:
+                    x_len = 0
+                    try:
+                        x_len = list(x).index(0) + 1
+                    except:
+                        x_len = len(x)
+                    len_list.append(x_len)
+                return len_list
+
             def my_debugging():
                 # Generate batches
                 batches = data_helpers.batch_iter(
@@ -175,52 +192,59 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                 # Training loop. For each batch...
                 for batch in batches:
                     x_batch, y_batch = zip(*batch)
+                    sequence_length = get_len_list(x_batch)
                     feed_dict = {
                       rnn.input_x: x_batch,
+                      rnn.sequence_length: sequence_length,
                       rnn.input_y: y_batch,
                       rnn.dropout_keep_prob: FLAGS.dropout_keep_prob
                     }
-                    print(np.shape(x_batch))
-                    _input_x, _embedded_words, _transpose_embedded_words, _outputs, _final_outputs, _scores, _input_y = sess.run([rnn.input_x, rnn.embedded_words, rnn.transpose_embedded_words, rnn.outputs, rnn.final_outputs, rnn.scores, rnn.input_y],feed_dict)
+                    _input_x, _sequence_length, _embedded_words, _outputs, _states, _last_outputs, _scores, _input_y = sess.run([rnn.input_x, rnn.sequence_length, rnn.embedded_words, rnn.outputs, rnn.states, rnn.last_outputs, rnn.scores, rnn.input_y],feed_dict)
                     print(np.shape(_input_x), '_input_x: ', _input_x)
-                    print(np.shape(_embedded_words), '_embedd_wiords: ', _embedded_words)
-                    print(np.shape(_transpose_embedded_words), '_transpose_embedded_words: ', _transpose_embedded_words)
+                    print(np.shape(_sequence_length), '_sequence_length: ', _sequence_length)
+                    print(np.shape(_embedded_words), '_embedded_words: ', _embedded_words)
                     print(np.shape(_outputs), '_outputs', _outputs)
-                    print(np.shape(_final_outputs), '_final_outputs', _final_outputs)
+                    print(np.shape(_states), '_states', _states)
+                    print(np.shape(_last_outputs), '_last_outputs', _last_outputs)
                     print(np.shape(_scores), '_scores', _scores)
                     print(np.shape(_input_y), '_input_y', _input_y)
 
                     print('----- print shape -----')
                     print(np.shape(x_batch), 'x_batch')
                     print(np.shape(_input_x), '_input_x')
+                    print(np.shape(_sequence_length), '_sequence_length')
                     print(np.shape(_embedded_words), '_embedded_words')
-                    print(np.shape(_transpose_embedded_words), '_transpose_embedded_words')
                     print(np.shape(_outputs), '_outputs')
-                    print(np.shape(_final_outputs), '_final_outputs')
+                    print(np.shape(_states), '_states')
+                    print(np.shape(_last_outputs), '_last_outputs')
                     print(np.shape(_scores), '_scores')
                     print(np.shape(_input_y), '_input_y')
                     return 0
 
             def do_train():
+                dev_sequence_length = get_len_list(x_dev)
                 # Generate batches
                 batches = data_helpers.batch_iter(
                     list(zip(x_train, y_train)), FLAGS.batch_size, FLAGS.num_epochs)
                 # Training loop. For each batch...
                 for batch in batches:
                     x_batch, y_batch = zip(*batch)
-                    train_step(x_batch, y_batch)
+                    sequence_length = get_len_list(x_batch)
+                    train_step(x_batch, sequence_length, y_batch)
                     current_step = tf.train.global_step(sess, global_step)
                     if current_step % FLAGS.evaluate_every == 0:
                         print("\nEvaluation:")
-                        dev_step(x_dev, y_dev, writer=dev_summary_writer)
+                        dev_step(x_dev, dev_sequence_length, y_dev, writer=dev_summary_writer)
                         print("")
                     if current_step % FLAGS.checkpoint_every == 0:
                         path = saver.save(sess, checkpoint_prefix, global_step=current_step)
                         print("Saved model checkpoint to {}\n".format(path))
 
             # do
-            # my_debugging()
-            do_train()
+            if FLAGS.debug:
+                my_debugging()
+            else:
+                do_train()
 
 def main(argv=None):
     x_train, y_train, vocab_processor, x_dev, y_dev = preprocess()
