@@ -30,6 +30,10 @@ class TextRNN(object):
             self.outputs, self.states = tf.nn.dynamic_rnn(self.rnn_cell, self.embedded_words, sequence_length=self.sequence_length, dtype=tf.float32)
             self.last_outputs = self.states.h
 
+        # Add dropout
+        with tf.name_scope("dropout"):
+            self.h_drop = tf.nn.dropout(self.last_outputs, self.dropout_keep_prob)
+
         # Final (unnormalized) scores and predictions
         with tf.name_scope("output"):
             W = tf.get_variable(
@@ -37,7 +41,7 @@ class TextRNN(object):
                 shape=[num_hidden, num_classes],
                 initializer=tf.contrib.layers.xavier_initializer())
             b = tf.Variable(tf.constant(0.1, shape=[num_classes]), name="b")
-            self.scores = tf.nn.xw_plus_b(self.last_outputs, W, b, name="scores")
+            self.scores = tf.nn.xw_plus_b(self.h_drop, W, b, name="scores")
             self.predictions = tf.argmax(self.scores, 1, name="predictions")
 
         # Calculate mean cross-entropy loss
