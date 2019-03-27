@@ -7,6 +7,7 @@ import time
 import datetime
 import data_helpers
 from text_rnn import TextRNN
+from text_bidirectional_rnn import TextBidirectionalRNN
 from tensorflow.contrib import learn
 
 # Parameters
@@ -19,7 +20,7 @@ tf.flags.DEFINE_string("negative_data_file", "./data/rt-polaritydata/rt-polarity
 
 # Model Hyperparameters
 tf.flags.DEFINE_integer("embedding_dim", 100, "Dimensionality of character embedding (default: 128)")
-tf.flags.DEFINE_integer("num_hidden", 200, " lstm hidden size default: 200)")
+tf.flags.DEFINE_integer("num_hidden", 1000, " lstm hidden size default: 200)")
 tf.flags.DEFINE_float("dropout_keep_prob", 0.75, "Dropout keep probability (default: 0.5)")
 
 # Training Parameters
@@ -32,6 +33,9 @@ tf.flags.DEFINE_integer("num_checkpoints", 5, "Number of checkpoints to store (d
 # Misc Parameters
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
 tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
+
+# bidirectional option
+tf.flags.DEFINE_boolean("bidirectional", True, "for bidirectional graph")
 
 # Debug Parameters
 tf.flags.DEFINE_boolean("debug", False, "for debug")
@@ -83,13 +87,22 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
           log_device_placement=FLAGS.log_device_placement)
         sess = tf.Session(config=session_conf)
         with sess.as_default():
-            rnn = TextRNN(
-                max_sequence_length=x_train.shape[1],
-                num_classes=y_train.shape[1],
-                vocab_size=len(vocab_processor.vocabulary_),
-                embedding_size=FLAGS.embedding_dim,
-                num_hidden=FLAGS.num_hidden,
-                batch_size=FLAGS.batch_size)
+            if FLAGS.bidirectional:
+                rnn = TextBidirectionalRNN(
+                    max_sequence_length=x_train.shape[1],
+                    num_classes=y_train.shape[1],
+                    vocab_size=len(vocab_processor.vocabulary_),
+                    embedding_size=FLAGS.embedding_dim,
+                    num_hidden=FLAGS.num_hidden,
+                    batch_size=FLAGS.batch_size)
+            else:
+                rnn = TextRNN(
+                    max_sequence_length=x_train.shape[1],
+                    num_classes=y_train.shape[1],
+                    vocab_size=len(vocab_processor.vocabulary_),
+                    embedding_size=FLAGS.embedding_dim,
+                    num_hidden=FLAGS.num_hidden,
+                    batch_size=FLAGS.batch_size)
 
             # Define Training procedure
             global_step = tf.Variable(0, name="global_step", trainable=False)
@@ -185,6 +198,25 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                     len_list.append(x_len)
                 return len_list
 
+            def do_train():
+                dev_sequence_length = get_len_list(x_dev)
+                # Generate batches
+                batches = data_helpers.batch_iter(
+                    list(zip(x_train, y_train)), FLAGS.batch_size, FLAGS.num_epochs)
+                # Training loop. For each batch...
+                for batch in batches:
+                    x_batch, y_batch = zip(*batch)
+                    sequence_length = get_len_list(x_batch)
+                    train_step(x_batch, sequence_length, y_batch)
+                    current_step = tf.train.global_step(sess, global_step)
+                    if current_step % FLAGS.evaluate_every == 0:
+                        print("\nEvaluation:")
+                        dev_step(x_dev, dev_sequence_length, y_dev, writer=dev_summary_writer)
+                        print("")
+                    if current_step % FLAGS.checkpoint_every == 0:
+                        path = saver.save(sess, checkpoint_prefix, global_step=current_step)
+                        print("Saved model checkpoint to {}\n".format(path))
+
             def my_debugging():
                 # Generate batches
                 batches = data_helpers.batch_iter(
@@ -221,8 +253,7 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                     print(np.shape(_input_y), '_input_y')
                     return 0
 
-            def do_train():
-                dev_sequence_length = get_len_list(x_dev)
+            def my_debugging_bidirectional():
                 # Generate batches
                 batches = data_helpers.batch_iter(
                     list(zip(x_train, y_train)), FLAGS.batch_size, FLAGS.num_epochs)
@@ -230,19 +261,44 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                 for batch in batches:
                     x_batch, y_batch = zip(*batch)
                     sequence_length = get_len_list(x_batch)
-                    train_step(x_batch, sequence_length, y_batch)
-                    current_step = tf.train.global_step(sess, global_step)
-                    if current_step % FLAGS.evaluate_every == 0:
-                        print("\nEvaluation:")
-                        dev_step(x_dev, dev_sequence_length, y_dev, writer=dev_summary_writer)
-                        print("")
-                    if current_step % FLAGS.checkpoint_every == 0:
-                        path = saver.save(sess, checkpoint_prefix, global_step=current_step)
-                        print("Saved model checkpoint to {}\n".format(path))
+                    feed_dict = {
+                      rnn.input_x: x_batch,
+                      rnn.sequence_length: sequence_length,
+                      rnn.input_y: y_batch,
+                      rnn.dropout_keep_prob: FLAGS.dropout_keep_prob
+                    }
+                    _input_x, _sequence_length, _embedded_words, _outputs, _states, _last_outputs_fw, _last_outputs_bw, _last_outputs_concat, _scores, _input_y = sess.run([rnn.input_x, rnn.sequence_length, rnn.embedded_words, rnn.outputs, rnn.states, rnn.last_outputs_fw, rnn.last_outputs_bw, rnn.last_outputs_concat, rnn.scores, rnn.input_y], feed_dict)
+                    print(np.shape(_input_x), '_input_x: ', _input_x)
+                    print(np.shape(_sequence_length), '_sequence_length: ', _sequence_length)
+                    print(np.shape(_embedded_words), '_embedded_words: ', _embedded_words)
+                    print(np.shape(_outputs), '_outputs', _outputs)
+                    print(np.shape(_states), '_states', _states)
+                    print(np.shape(_last_outputs_fw), '_last_outputs_fw', _last_outputs_fw)
+                    print(np.shape(_last_outputs_bw), '_last_outputs_bw', _last_outputs_bw)
+                    print(np.shape(_last_outputs_concat), '_last_outputs_concat', _last_outputs_concat)
+                    print(np.shape(_scores), '_scores', _scores)
+                    print(np.shape(_input_y), '_input_y', _input_y)
+
+                    print('----- print shape -----')
+                    print(np.shape(x_batch), 'x_batch')
+                    print(np.shape(_input_x), '_input_x')
+                    print(np.shape(_sequence_length), '_sequence_length')
+                    print(np.shape(_embedded_words), '_embedded_words')
+                    print(np.shape(_outputs), '_outputs')
+                    print(np.shape(_states), '_states')
+                    print(np.shape(_last_outputs_fw), '_last_outputs_fw')
+                    print(np.shape(_last_outputs_bw), '_last_outputs_bw')
+                    print(np.shape(_last_outputs_concat), '_last_outputs_concat')
+                    print(np.shape(_scores), '_scores')
+                    print(np.shape(_input_y), '_input_y')
+                    return 0
 
             # do
             if FLAGS.debug:
-                my_debugging()
+                if FLAGS.bidirectional:
+                    my_debugging_bidirectional()
+                else:
+                    my_debugging()
             else:
                 do_train()
 
