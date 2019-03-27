@@ -22,15 +22,19 @@ tf.flags.DEFINE_integer("embedding_dim", 100, "Dimensionality of character embed
 tf.flags.DEFINE_integer("num_hidden", 200, " lstm hidden size default: 200)")
 tf.flags.DEFINE_float("dropout_keep_prob", 0.5, "Dropout keep probability (default: 0.5)")
 
-# Training parameters
+# Training Parameters
 tf.flags.DEFINE_integer("batch_size", 64, "Batch Size (default: 64)")
 tf.flags.DEFINE_integer("num_epochs", 200, "Number of training epochs (default: 200)")
 tf.flags.DEFINE_integer("evaluate_every", 100, "Evaluate model on dev set after this many steps (default: 100)")
 tf.flags.DEFINE_integer("checkpoint_every", 100, "Save model after this many steps (default: 100)")
 tf.flags.DEFINE_integer("num_checkpoints", 5, "Number of checkpoints to store (default: 5)")
+
 # Misc Parameters
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
 tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
+
+# Debug Parameters
+tf.flags.DEFINE_boolean("debug", False, "for debug")
 
 FLAGS = tf.flags.FLAGS
 print("\nParameters:")
@@ -237,8 +241,10 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                         print("Saved model checkpoint to {}\n".format(path))
 
             # do
-            #my_debugging()
-            do_train()
+            if FLAGS.debug:
+                my_debugging()
+            else:
+                do_train()
 
 def main(argv=None):
     x_train, y_train, vocab_processor, x_dev, y_dev = preprocess()
