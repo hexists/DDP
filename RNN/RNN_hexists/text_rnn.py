@@ -29,11 +29,14 @@ class TextRNN(object):
 
         # cal rnn layer
         with tf.name_scope("vanila_rnn"):
+            ## Use Initial State
 			# defining initial state
-            self.initial_state = self.rnn_cell.zero_state(batch_size, dtype=tf.float32)
+            # self.initial_state = self.rnn_cell.zero_state(, dtype=tf.float32)
 			# 'state' is a tensor of shape [batch_size, cell_state_size]
             print('\nself.embedded_words:{}\n'.format(np.shape(self.embedded_words)))
-            self.outputs, states = tf.nn.dynamic_rnn(self.rnn_cell, self.embedded_words, initial_state=self.initial_state, dtype=tf.float32)
+            # self.outputs, states = tf.nn.dynamic_rnn(self.rnn_cell, self.embedded_words, initial_state=self.initial_state, dtype=tf.float32)
+            ## Do Not Use Initial State
+            self.outputs, states = tf.nn.dynamic_rnn(self.rnn_cell, self.embedded_words, dtype=tf.float32)
 
         # Final (unnormalized) scores and predictions
         with tf.name_scope("output"):
