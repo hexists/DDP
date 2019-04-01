@@ -6,7 +6,7 @@ CNN
  
 # Requirements
  - Python 3
- - Tensorflow > 0.12
+ - Tensorflow > 1.12
  - Numpy
 ```
 #set venv
