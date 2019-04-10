@@ -3,10 +3,11 @@
 import tensorflow as tf
 import numpy as np
 import os
+import sys
 import time
 import datetime
 import data_helpers
-from text_rnn import TextRNN
+from text_rnn_w_init_state import TextRNN
 from tensorflow.contrib import learn
 
 # Parameters
@@ -21,18 +22,21 @@ tf.flags.DEFINE_string("negative_data_file", "./data/rt-polaritydata/rt-polarity
 tf.flags.DEFINE_integer("embedding_dim", 100, "Dimensionality of character embedding (default: 128)")
 tf.flags.DEFINE_integer("num_hidden", 200, " lstm hidden size default: 200)")
 tf.flags.DEFINE_float("dropout_keep_prob", 0.5, "Dropout keep probability (default: 0.5)")
+tf.flags.DEFINE_boolean("init_state", False, "set init state")
 
-# Training parameters
+# training parameters
 tf.flags.DEFINE_integer("batch_size", 64, "Batch Size (default: 64)")
 tf.flags.DEFINE_integer("num_epochs", 200, "Number of training epochs (default: 200)")
 tf.flags.DEFINE_integer("evaluate_every", 100, "Evaluate model on dev set after this many steps (default: 100)")
 tf.flags.DEFINE_integer("checkpoint_every", 100, "Save model after this many steps (default: 100)")
 tf.flags.DEFINE_integer("num_checkpoints", 5, "Number of checkpoints to store (default: 5)")
+
 # Misc Parameters
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
 tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
 
 FLAGS = tf.flags.FLAGS
+FLAGS(sys.argv)
 print("\nParameters:")
 for attr, value in FLAGS.__flags.items():
     print("{}: {}".format(attr, FLAGS.__flags[attr].value))
@@ -86,7 +90,8 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                 vocab_size=len(vocab_processor.vocabulary_),
                 embedding_size=FLAGS.embedding_dim,
                 num_hidden=FLAGS.num_hidden,
-                batch_size=FLAGS.batch_size)
+                batch_size=FLAGS.batch_size,
+                init_state=FLAGS.init_state)
 
             # Define Training procedure
             global_step = tf.Variable(0, name="global_step", trainable=False)
@@ -202,28 +207,33 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                 # Generate batches
                 batches = data_helpers.batch_iter(
                     list(zip(x_train, y_train)), FLAGS.batch_size, FLAGS.num_epochs)
-                # ## Use Initial State
-                # dev_batches = data_helpers.batch_iter(
-                #     list(zip(x_dev, y_dev)), FLAGS.batch_size, FLAGS.num_epochs)
+
+                ## Use Initial State
+                if FLAGS.init_state is True:
+                    dev_batches = data_helpers.batch_iter(
+                            list(zip(x_dev, y_dev)), FLAGS.batch_size, FLAGS.num_epochs)
+
                 # Training loop. For each batch...
                 for batch in batches:
+                    if FLAGS.init_state is True:
+                        if len(batch) != FLAGS.batch_size:
+                            continue
+
                     x_batch, y_batch = zip(*batch)
-                    # print('x_batch', np.shape(x_batch))
-                    # print('y_batch', np.shape(y_batch))
                     train_step(x_batch, y_batch)
                     current_step = tf.train.global_step(sess, global_step)
                     if current_step % FLAGS.evaluate_every == 0:
                         print("\nEvaluation:")
-                
-                        # ## Use Initial State
-                        # for dev_batch in dev_batches:
-                        #     x_dev_batch, y_dev_batch = zip(*dev_batch)
-                        #     print('x_dev_batch', np.shape(x_dev_batch))
-                        #     print('y_dev_batch', np.shape(y_dev_batch))
-                        #     dev_step(x_dev_batch, y_dev_batch, writer=dev_summary_writer)
-
-                        ## Do Not Use Initial State
-                        dev_step(x_dev, y_dev, writer=dev_summary_writer)
+                        ## Use Initial State
+                        if FLAGS.init_state is True:
+                            for dev_batch in dev_batches:
+                                if len(dev_batch) != FLAGS.batch_size:
+                                    continue
+                                x_dev_batch, y_dev_batch = zip(*dev_batch)
+                                dev_step(x_dev_batch, y_dev_batch, writer=dev_summary_writer)
+                        else:
+                            ## Do Not Use Initial State
+                            dev_step(x_dev, y_dev, writer=dev_summary_writer)
                         print("")
                     if current_step % FLAGS.checkpoint_every == 0:
                         path = saver.save(sess, checkpoint_prefix, global_step=current_step)

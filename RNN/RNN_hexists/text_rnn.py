@@ -6,7 +6,7 @@ class TextRNN(object):
     A RNN for text classification.
     """
     def __init__(
-      self, sequence_length, num_classes, vocab_size, embedding_size, num_hidden, batch_size):
+      self, sequence_length, num_classes, vocab_size, embedding_size, num_hidden, batch_size, init_state=False):
 
         # Placeholders for input, output and dropout
         self.input_x = tf.placeholder(tf.int32, [None, sequence_length], name="input_x")
@@ -19,7 +19,6 @@ class TextRNN(object):
                 tf.random_uniform([vocab_size, embedding_size], -1.0, 1.0),
                 name="W")
             self.embedded_words = tf.nn.embedding_lookup(W, self.input_x) #[batch, n_timesteps, n_inputs]
-            # self.transpose_embedded_words = tf.transpose(self.embedded_words, perm=[1, 0, 2]) #[n_timesteps, batch, n_inputs]
 
         # rnn layer
         with tf.device('/cpu:0'), tf.name_scope("rnn"):
@@ -29,14 +28,16 @@ class TextRNN(object):
 
         # cal rnn layer
         with tf.name_scope("vanila_rnn"):
-            ## Use Initial State
-			# defining initial state
-            # self.initial_state = self.rnn_cell.zero_state(, dtype=tf.float32)
-			# 'state' is a tensor of shape [batch_size, cell_state_size]
-            print('\nself.embedded_words:{}\n'.format(np.shape(self.embedded_words)))
-            # self.outputs, states = tf.nn.dynamic_rnn(self.rnn_cell, self.embedded_words, initial_state=self.initial_state, dtype=tf.float32)
+            if init_state is True:
+                ## Use Initial State
+			    # defining initial state
+                self.initial_state = self.rnn_cell.zero_state(batch_size, dtype=tf.float32)
+			    # 'state' is a tensor of shape [batch_size, cell_state_size]
+                # print('\nself.embedded_words:{}\n'.format(np.shape(self.embedded_words)))
+                self.outputs, states = tf.nn.dynamic_rnn(self.rnn_cell, self.embedded_words, initial_state=self.initial_state, dtype=tf.float32)
+            else:
             ## Do Not Use Initial State
-            self.outputs, states = tf.nn.dynamic_rnn(self.rnn_cell, self.embedded_words, dtype=tf.float32)
+                self.outputs, states = tf.nn.dynamic_rnn(self.rnn_cell, self.embedded_words, dtype=tf.float32)
 
         # Final (unnormalized) scores and predictions
         with tf.name_scope("output"):
@@ -50,7 +51,7 @@ class TextRNN(object):
 
             self.scores = tf.nn.xw_plus_b(self.transpose_outputs[-1], W, b, name="scores")
             self.predictions = tf.argmax(self.scores, 1, name="predictions")
-            print('\npredictions:{}\n'.format(np.shape(self.predictions)))
+            # print('\npredictions:{}\n'.format(np.shape(self.predictions)))
 
         # Calculate mean cross-entropy loss
         with tf.name_scope("loss"):
