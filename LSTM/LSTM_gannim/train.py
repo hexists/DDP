@@ -93,10 +93,10 @@ def train(train_data, vocab_processor, test_data, embedding_matrix, iterator = B
     with tf.Graph().as_default():
         with tf.Session(config=config) as sess:
             with sess.as_default():
+                gstep = tf.Variable(0, name="gstep", trainable=False)
                 ## build graph
                 vocab_size = len(vocab_processor.vocabulary_)
                 rnn = RNN(BATCH_SIZE, vocab_size, EMBEDDING_DIM, HIDDEN_SIZE, NUM_CLASSES)
-                gstep = tf.Variable(0, name="gstep", trainable=False)
                 optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
                 grads_vars = optimizer.compute_gradients(rnn.loss)
                 train_op = optimizer.apply_gradients(grads_vars, global_step=gstep)
@@ -105,24 +105,26 @@ def train(train_data, vocab_processor, test_data, embedding_matrix, iterator = B
                 out_dir = os.path.abspath(os.path.join(os.path.curdir, "runs", time_stamp))
                 print("writing to {}".format(out_dir))
                 ## gradients summaries
-                grad_summaries = []
-                for g, v in grads_vars:
-                    if g is not None:
-                        grad_hist_summary = tf.summary.histogram("{}/grad/hist".format(v.name), g)
-                        grad_summaries.append(grad_hist_summary)
-                        ## sparsity - 얘는 뭐하는 친구였을까요?
-                        sparsity_summary = tf.summary.scalar("{}/grad/sparsity".format(v.name), tf.nn.zero_fraction(g))
-                        grad_summaries.append(sparsity_summary)
-                grad_summaries_merged = tf.summary.merge(grad_summaries)
-                loss_summary = tf.summary.scalar("loss", rnn.loss)
-                acc_summary = tf.summary.scalar("accuracy", rnn.accuracy)
-                train_summary_op = tf.summary.merge([loss_summary, acc_summary, grad_summaries_merged])
+                #grad_summaries = []
+                #for g, v in grads_vars:
+                #    if g:
+                #        grad_hist_summary = tf.summary.histogram("{}/grad/hist".format(v.name), g)
+                #        grad_summaries.append(grad_hist_summary)
+                #        sparsity_summary = tf.summary.scalar("{}/grad/sparsity".format(v.name), tf.nn.zero_fraction(g))
+                #        grad_summaries.append(sparsity_summary)
+                #grad_summaries_merged = tf.summary.merge(grad_summaries)
+                #train_summary_op = tf.summary.merge([loss_summary, acc_summary, grad_summaries_merged])
+                s_loss = tf.placeholder(tf.float32)
+                s_acc = tf.placeholder(tf.float32)
+                loss_summary = tf.summary.scalar("loss", s_loss) #rnn.loss)
+                acc_summary = tf.summary.scalar("accuracy", s_acc) #rnn.accuracy)
+                train_summary_op = tf.summary.merge([loss_summary, acc_summary])
+                dev_summary_op = tf.summary.merge([loss_summary, acc_summary])
+                ## define summary path 
                 train_summary_dir = os.path.join(out_dir, "summaries", "train")
                 train_summary_writer = tf.summary.FileWriter(train_summary_dir, sess.graph)
-                dev_summary_op = tf.summary.merge([loss_summary, acc_summary])
                 dev_summary_dir = os.path.join(out_dir, "summaries", "dev")
                 dev_summary_writer = tf.summary.FileWriter(dev_summary_dir, sess.graph)
-                ### end summarise 
                 ## saver
                 checkpoint_dir = os.path.abspath(os.path.join(out_dir, "checkpoints"))
                 checkpoint_prefix = os.path.join(checkpoint_dir, "model")
@@ -134,37 +136,19 @@ def train(train_data, vocab_processor, test_data, embedding_matrix, iterator = B
                 accuracy_list = []
                 sess.run(tf.global_variables_initializer())
                 def train_step(batch):
-                    #print("==== train_step ==== ")
-                    #for i in range(0,3):
-                    #    print(np.shape(batch[i]))
-                    #print(rnn.input_x)
-                    #print(rnn.input_y)
-                    #print("=====================")
                     feed_dict = {rnn.input_x : batch[0], rnn.input_y : batch[1], rnn.sequence_length : batch[2], rnn.dropout_keep_prob : KEEP_PROB}
-                    _, step, summaries, loss, accuracy = sess.run([train_op, gstep, train_summary_op, rnn.loss, rnn.accuracy], feed_dict)
-                    #embedded_words, outputs, states, scores, predictions, accuracy, loss, step, op = sess.run([rnn.embedded_words, rnn.outputs, rnn.states, rnn.scores, rnn.predictions, rnn.accuracy, rnn.loss, gstep, train_op], feed_dict)
-                    #print("embedded_words",np.shape(embedded_words))
-                    #print("outputs",np.shape(outputs))
-                    #print("states",np.shape(states))
-                    #print("scores",np.shape(scores))
-                    #print("predictions",np.shape(predictions))
-                    #print("accuracy", accuracy)
-                    #print("loss", loss)
+                    _, loss, accuracy = sess.run([train_op, rnn.loss, rnn.accuracy], feed_dict)
+                    step, summaries = sess.run([gstep, train_summary_op], {s_loss:loss, s_acc:accuracy})
+                    #_, step, summaries, loss, accuracy = sess.run([train_op, gstep, train_summary_op, rnn.loss, rnn.accuracy], feed_dict)
                     time_str = datetime.datetime.now().isoformat()
                     if step % 10 == 0:
                         print("train {}: step {}. loss {}, acc {}".format(time_str, step, loss, accuracy))
                     train_summary_writer.add_summary(summaries, step)
                 def dev_step(batch, writer=None):
                     feed_dict = {rnn.input_x : batch[0], rnn.input_y : batch[1], rnn.sequence_length : batch[2], rnn.dropout_keep_prob : 1.0}
-                    step, summaries, loss, accuracy = sess.run([gstep, dev_summary_op, rnn.loss, rnn.accuracy], feed_dict)
-                    time_str = datetime.datetime.now().isoformat()
+                    #step, summaries, loss, accuracy = sess.run([gstep, dev_summary_op, rnn.loss, rnn.accuracy], feed_dict)
+                    loss, accuracy = sess.run([rnn.loss, rnn.accuracy], feed_dict)
                     #print("dev {}: step {}. loss {}, acc {}".format(time_str, step, loss, accuracy))
-                    max_acc = max(accuracy_list) if len(accuracy_list) > 2 else -1000
-                    if max_acc < accuracy:
-                        print("update {} -> {}, length {}".format(max_acc, accuracy, len(accuracy_list)))
-                        accuracy_list.append(accuracy)
-                    if writer:
-                        writer.add_summary(summaries, step)
                     return loss, accuracy
                 def check_stop():
                     if len(accuracy_list) > 6:
@@ -189,18 +173,28 @@ def train(train_data, vocab_processor, test_data, embedding_matrix, iterator = B
                     if cur_step % EVAL_EVERY == 0: 
                         print("\nEvaluation : ")
                         te_epoch = te.epochs
-                        tot_loss = 0
-                        tot_acc = 0
-                        tot = 0
+                        tot_loss = []
+                        tot_acc = []
                         while te.epochs == te_epoch:
                             dev_batch = te.next_batch(BATCH_SIZE)
-                            loss, acc = dev_step(dev_batch, writer=dev_summary_writer)
-                            tot_loss += loss
-                            tot_acc += acc
-                            tot += 1
+                            loss, acc = dev_step(dev_batch) #, writer=dev_summary_writer)
+                            tot_loss.append(loss)
+                            tot_acc.append(acc)
+                        avg_loss = np.mean(tot_loss)
+                        avg_acc = np.mean(tot_acc)
+                        step, summaries = sess.run([gstep, dev_summary_op], {s_loss:avg_loss, s_acc:avg_acc})
+                        if dev_summary_writer:
+                            dev_summary_writer.add_summary(summaries, step)
+                        ##
                         time_str = datetime.datetime.now().isoformat()
-                        print(">> dev {}: tot loss {}, acc {}".format(time_str, tot_loss/tot, tot_acc/tot))
+                        print("dev {}: step {}. avg loss {}, avg acc {}".format(time_str, step, avg_loss, avg_acc))
+                        ##
+                        max_acc = max(accuracy_list) if len(accuracy_list) > 2 else -1000
+                        if max_acc < avg_acc:
+                            print("update {} -> {}, length {}".format(max_acc, avg_acc, len(accuracy_list)))
+                            accuracy_list.append(avg_acc)
                         print("")
+                        ####
                         path = saver.save(sess, checkpoint_prefix, global_step=cur_step)
                         print("Saved model checkpoint to {}\n".format(path))
                         if check_stop():
