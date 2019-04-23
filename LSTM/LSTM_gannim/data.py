@@ -61,8 +61,6 @@ class BucketedDataIterator():
         for i in range(self.num_buckets):
             self.dfs[i] = self.dfs[i].sample(frac=1).reset_index(drop=True)
             self.cursor[i] = 0
-        #print self.dfs
-
     def next_batch(self, n):
         #print(" === next_batch === ")
         if np.any(self.cursor+n+1 > self.size):
@@ -79,9 +77,6 @@ class BucketedDataIterator():
         for i, x_i in enumerate(x):
             res_idx = res_idxs[i]
             x_i[:res['length'][res_idx]] = np.array(res['as_numbers'][res_idx])
-            if 18759 in np.array(res['as_numbers'][res_idx]):
-                print ">>>>>>>>>>>>>>>>>>>>>"
-                print res['as_numbers'][res_idx]
         y = np.zeros([n, 2], dtype=np.int32)
         for i, y_i in enumerate(y):
             res_idx = res_idxs[i]

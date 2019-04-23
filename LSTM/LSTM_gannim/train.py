@@ -28,6 +28,7 @@ NUM_CHECKPOINTS = 5
 EVAL_EVERY = 100
 CHECKPOINT_EVERY = 100
 NUM_EPOCHS = 200
+BUCKET_SIZE = 1
     
 embedding_dir = './word2vec/'
 EMBEDDING_DIMS = 300
@@ -160,18 +161,18 @@ def train(train_data, vocab_processor, test_data, embedding_matrix, iterator = B
                             return True
                     return False
                 ## define iterator
-                tr = iterator(train_data)
-                te = iterator(test_data)
+                tr = iterator(train_data, num_buckets=BUCKET_SIZE)
+                te = iterator(test_data, num_buckets=BUCKET_SIZE)
                 cur_epoch = 0
-                num_epochs = 100
+                num_epochs = 10
                 while cur_epoch < num_epochs:
                     batch = tr.next_batch(BATCH_SIZE)
                     train_step(batch)
                     cur_step = tf.train.global_step(sess, gstep)
                     if tr.epochs > cur_epoch:
                         cur_epoch += 1 
+                        print("\n ---> cur_epoch : {} / {} ({}%)".format(cur_epoch, num_epochs, cur_epoch*100.0/num_epochs))
                     if cur_step % EVAL_EVERY == 0: 
-                        print("\nEvaluation : ")
                         te_epoch = te.epochs
                         tot_loss = []
                         tot_acc = []
@@ -182,6 +183,7 @@ def train(train_data, vocab_processor, test_data, embedding_matrix, iterator = B
                             tot_acc.append(acc)
                         avg_loss = np.mean(tot_loss)
                         avg_acc = np.mean(tot_acc)
+                        print("\nEvaluation : ")
                         step, summaries = sess.run([gstep, dev_summary_op], {s_loss:avg_loss, s_acc:avg_acc})
                         if dev_summary_writer:
                             dev_summary_writer.add_summary(summaries, step)
