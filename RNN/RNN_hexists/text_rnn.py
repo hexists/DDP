@@ -6,7 +6,7 @@ class TextRNN(object):
     A RNN for text classification.
     """
     def __init__(
-      self, sequence_length, num_classes, vocab_size, embedding_size, num_hidden, batch_size, init_state=False):
+      self, sequence_length, num_classes, vocab_size, embedding_size, num_hidden, batch_size, init_state, cell_type):
 
         # Placeholders for input, output and dropout
         self.input_x = tf.placeholder(tf.int32, [None, sequence_length], name="input_x")
@@ -22,12 +22,22 @@ class TextRNN(object):
 
         # rnn layer
         with tf.device('/cpu:0'), tf.name_scope("rnn"):
-			# create a BasicRNNCell
-            self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(num_hidden)
+            if cell_type == 'vanlia':
+			    # create a BasicRNNCell
+                self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(num_hidden)
+            elif cell_type == 'lstm':
+                # create a LSTMCell
+                self.rnn_cell = tf.nn.rnn_cell.LSTMCell(num_hidden)
+            elif cell_type == 'gru':
+                # create a GRUCell
+                self.rnn_cell = tf.nn.rnn_cell.GRUCell(num_hidden)
+            else:
+			    # create a BasicRNNCell
+                self.rnn_cell = tf.contrib.rnn.BasicLSTMCell(num_hidden)
 			# 'outputs' is a tensor of shape [batch_size, max_time, cell_state_size]
 
         # cal rnn layer
-        with tf.name_scope("vanila_rnn"):
+        with tf.name_scope("rnn"):
             if init_state is True:
                 ## Use Initial State
 			    # defining initial state

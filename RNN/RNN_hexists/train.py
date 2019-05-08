@@ -7,7 +7,7 @@ import sys
 import time
 import datetime
 import data_helpers
-from text_rnn_w_init_state import TextRNN
+from text_rnn import TextRNN
 from tensorflow.contrib import learn
 
 # Parameters
@@ -23,6 +23,7 @@ tf.flags.DEFINE_integer("embedding_dim", 100, "Dimensionality of character embed
 tf.flags.DEFINE_integer("num_hidden", 200, " lstm hidden size default: 200)")
 tf.flags.DEFINE_float("dropout_keep_prob", 0.5, "Dropout keep probability (default: 0.5)")
 tf.flags.DEFINE_boolean("init_state", False, "set init state")
+tf.flags.DEFINE_string("cell_type", "vanila", "set rnn cell (vanila | lstm | gru)")
 
 # training parameters
 tf.flags.DEFINE_integer("batch_size", 64, "Batch Size (default: 64)")
@@ -91,7 +92,8 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                 embedding_size=FLAGS.embedding_dim,
                 num_hidden=FLAGS.num_hidden,
                 batch_size=FLAGS.batch_size,
-                init_state=FLAGS.init_state)
+                init_state=FLAGS.init_state,
+                cell_type=FLAGS.cell_type)
 
             # Define Training procedure
             global_step = tf.Variable(0, name="global_step", trainable=False)
@@ -157,7 +159,7 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
                 print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
                 train_summary_writer.add_summary(summaries, step)
 
-            def dev_step(x_batch, y_batch, writer=None):
+            def dev_step(x_batch, y_batch):
                 """
                 Evaluates model on a dev set
                 """
