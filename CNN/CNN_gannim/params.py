@@ -1,0 +1,2 @@
+BATCH_SIZE = 64
+EVAL_TRAIN = True #False
