@@ -40,9 +40,6 @@ def make_batch(seq_data):
         # 학습을 위해 비교할 디코더 셀의 출력값. 끝나는 것을 알려주기 위해 마지막에 E 를 붙인다.
         target = [num_dic[n] for n in (seq[1] + 'E')]
 
-        # print(input)
-        # print(np.eye(dic_len))
-        # print(np.eye(dic_len)[input])
         input_batch.append(np.eye(dic_len)[input])
         output_batch.append(np.eye(dic_len)[output])
         # 출력값만 one-hot 인코딩이 아님 (sparse_softmax_cross_entropy_with_logits 사용)
@@ -77,7 +74,7 @@ with tf.variable_scope('encode'):
     enc_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
     enc_cell = tf.nn.rnn_cell.DropoutWrapper(enc_cell, output_keep_prob=0.5)
 
-    outputs, enc_states = tf.nn.dynamic_rnn(enc_cell, enc_input, dtype=tf.float32)
+    outputs, enc_states = encoder_model = tf.nn.dynamic_rnn(enc_cell, enc_input, dtype=tf.float32)
 
 # 디코더 셀을 구성한다.
 with tf.variable_scope('decode'):
@@ -86,16 +83,14 @@ with tf.variable_scope('decode'):
 
     # Seq2Seq 모델은 인코더 셀의 최종 상태값을
     # 디코더 셀의 초기 상태값으로 넣어주는 것이 핵심.
-    outputs, dec_states = tf.nn.dynamic_rnn(dec_cell, dec_input,
+    outputs, dec_states = decoder_model = tf.nn.dynamic_rnn(dec_cell, dec_input,
                                             initial_state=enc_states,
                                             dtype=tf.float32)
-
 
 model = tf.layers.dense(outputs, n_class, activation=None)
 
 # Loss
-logit = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=model, labels=targets)
-loss = tf.reduce_mean(logit)
+loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=model, labels=targets))
 tf.summary.scalar('loss', loss)
 
 # Accuracy
@@ -169,6 +164,52 @@ def translate(word):
     return translated
 
 
+# 단어를 입력받아 번역 단어를 예측하고 디코딩하는 함수
+def translate_v2(word):
+    # 이 모델은 입력값과 출력값 데이터로 [영어단어, 한글단어] 사용하지만,
+    # 예측시에는 한글단어를 알지 못하므로, 디코더의 입출력값을 의미 없는 값인 P 값으로 채운다.
+    # ['word', 'PPPP']
+    seq_data = [word, 'P' * len(word)]
+
+    translated = []
+
+    prediction = tf.argmax(model, 2)
+
+    input_batch, output_batch, _ = make_batch([seq_data])
+    output_batch = output_batch[0][0]
+    output_batch = np.expand_dims(output_batch, axis=0)
+    output_batch = np.expand_dims(output_batch, axis=0)
+
+    # print('output_batch: {}'.format(output_batch))
+
+    _, enc_out_states = sess.run(encoder_model, feed_dict={enc_input: input_batch})
+    
+    # print('enc_states: {}'.format(enc_states))
+    dec_output, dec_states = sess.run(decoder_model, feed_dict={enc_states: enc_out_states, dec_input: output_batch})
+    model_output = sess.run(model, feed_dict={outputs: dec_output})
+    pred_output = sess.run(prediction, feed_dict={model: model_output})
+    pred_char = char_arr[pred_output[0][0]]
+
+    translated.append(pred_char)
+
+    # print('model_output: {}'.format(model_output))
+    # print('pred_output: {}'.format(pred_output))
+    # print('pred_char: {}'.format(pred_char))
+
+    stop_condition = False
+    while not stop_condition:
+        dec_output, dec_states = sess.run(decoder_model, feed_dict={enc_states: dec_states, dec_input: model_output})
+        model_output = sess.run(model, feed_dict={outputs: dec_output})
+        pred_output = sess.run(prediction, feed_dict={model: model_output})
+        pred_char = char_arr[pred_output[0][0]]
+
+        if pred_char == 'E':
+            stop_condition = True
+        else:
+            translated.append(pred_char)
+
+    return ''.join(translated)
+
 print('\n=== 번역 테스트 ===')
 
 print('word ->', translate('word'))
@@ -176,3 +217,11 @@ print('wodr ->', translate('wodr'))
 print('love ->', translate('love'))
 print('loev ->', translate('loev'))
 print('abcd ->', translate('abcd'))
+
+print('\n=== 번역 테스트 v2 ===')
+
+print('word ->', translate_v2('word'))
+print('wodr ->', translate_v2('wodr'))
+print('love ->', translate_v2('love'))
+print('loev ->', translate_v2('loev'))
+print('abcd ->', translate_v2('abcd'))
