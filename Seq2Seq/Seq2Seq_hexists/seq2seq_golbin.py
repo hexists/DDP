@@ -175,31 +175,25 @@ def translate_v2(word):
 
     prediction = tf.argmax(model, 2)
 
-    input_batch, output_batch, _ = make_batch([seq_data])
-    output_batch = output_batch[0][0]
-    output_batch = np.expand_dims(output_batch, axis=0)
-    output_batch = np.expand_dims(output_batch, axis=0)
+    input_batch, pred_onehot_batch, _ = make_batch([seq_data])
+    pred_onehot_output = [[pred_onehot_batch[0][0]]]
 
-    # print('output_batch: {}'.format(output_batch))
+    # print('pred_onehot_output: {}'.format(pred_onehot_output))
 
     _, enc_out_states = sess.run(encoder_model, feed_dict={enc_input: input_batch})
-    
     # print('enc_states: {}'.format(enc_states))
-    dec_output_states, model_output, pred_output = sess.run([decoder_model, model, prediction], feed_dict={enc_states: enc_out_states, dec_input: output_batch})
-    dec_states = dec_output_states[1]
-    pred_char = char_arr[pred_output[0][0]]
 
-    translated.append(pred_char)
-
-    # print('model_output: {}'.format(model_output))
-    # print('pred_output: {}'.format(pred_output))
-    # print('pred_char: {}'.format(pred_char))
-
+    dec_states = enc_out_states
     stop_condition = False
     while not stop_condition:
-        dec_output_states, model_output, pred_output = sess.run([decoder_model, model, prediction], feed_dict={enc_states: dec_states, dec_input: model_output})
-        dec_states = dec_output_states[1]
+        dec_output_states, pred_output = sess.run([decoder_model, prediction], feed_dict={enc_states: dec_states, dec_input: pred_onehot_output})
+        dec_output, dec_states = dec_output_states
+        pred_onehot_output = [[np.eye(dic_len)[pred_output[0][0]]]]
         pred_char = char_arr[pred_output[0][0]]
+
+        # print('dec_output : {}'.format(dec_output[0][0]))
+        # print('pred_output: {}'.format(pred_output))
+        # print('pred_onehot_output: {}'.format(pred_onehot_output))
 
         if pred_char == 'E':
             stop_condition = True
