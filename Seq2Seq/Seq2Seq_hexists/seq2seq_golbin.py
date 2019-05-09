@@ -185,9 +185,8 @@ def translate_v2(word):
     _, enc_out_states = sess.run(encoder_model, feed_dict={enc_input: input_batch})
     
     # print('enc_states: {}'.format(enc_states))
-    dec_output, dec_states = sess.run(decoder_model, feed_dict={enc_states: enc_out_states, dec_input: output_batch})
-    model_output = sess.run(model, feed_dict={outputs: dec_output})
-    pred_output = sess.run(prediction, feed_dict={model: model_output})
+    dec_output_states, model_output, pred_output = sess.run([decoder_model, model, prediction], feed_dict={enc_states: enc_out_states, dec_input: output_batch})
+    dec_states = dec_output_states[1]
     pred_char = char_arr[pred_output[0][0]]
 
     translated.append(pred_char)
@@ -198,9 +197,8 @@ def translate_v2(word):
 
     stop_condition = False
     while not stop_condition:
-        dec_output, dec_states = sess.run(decoder_model, feed_dict={enc_states: dec_states, dec_input: model_output})
-        model_output = sess.run(model, feed_dict={outputs: dec_output})
-        pred_output = sess.run(prediction, feed_dict={model: model_output})
+        dec_output_states, model_output, pred_output = sess.run([decoder_model, model, prediction], feed_dict={enc_states: dec_states, dec_input: model_output})
+        dec_states = dec_output_states[1]
         pred_char = char_arr[pred_output[0][0]]
 
         if pred_char == 'E':
