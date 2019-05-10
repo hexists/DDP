@@ -40,17 +40,27 @@ class UmChaTransData(object):
         inputs = []
         outputs = []
         targets = []
-        tot_word_idx_dic = {'P':0} # 
+        tot_word_idx_dic = {'':0, '':1, '':2} # 
         for input, output in tot_datas:
             inputs.append(self.cut_utf8(input))
             # 디코더 셀의 입력값. 시작을 나타내는 S 심볼을 맨 앞에 붙여준다.
-            outputs.append(self.cut_utf8('S{}'.format(output))) 
+            outputs.append(self.cut_utf8('{}'.format(output))) 
             # 학습을 위해 비교할 디코더 셀의 출력값. 끝나는 것을 알려주기 위해 마지막에 E 를 붙인다.
-            targets.append(self.cut_utf8('{}E'.format(output))) 
+            targets.append(self.cut_utf8('{}'.format(output))) 
             self.update_word_idx_dic(tot_word_idx_dic, inputs[-1])
             self.update_word_idx_dic(tot_word_idx_dic, outputs[-1])
             self.update_word_idx_dic(tot_word_idx_dic, targets[-1])
         return inputs, outputs, targets, tot_word_idx_dic
+
+    def get_word_idx(self, datas):
+        inputs = [] 
+        outputs = []
+        for x, y in datas:
+            inputs.append(self.cut_utf8(x))
+            outputs.append(self.cut_utf8('S{}'.format(y)))
+        input_inputs = self.convert_word_to_idx(inputs, self.tot_word_idx_dic)
+        input_outputs = self.convert_word_to_idx(outputs, self.tot_word_idx_dic)
+        return input_inputs, input_outputs, max([len(txt) for txt in inputs]), max([len(txt) for txt in outputs])
     
     @staticmethod
     def convert_word_to_idx(datas, word_idx_dic):

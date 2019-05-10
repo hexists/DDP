@@ -3,6 +3,8 @@
 import tensorflow as tf
 import numpy as np
 import sys
+import os 
+import time
 reload(sys)
 sys.setdefaultencoding('utf-8')
 from umcha_trans_data import UmChaTransData
@@ -12,6 +14,7 @@ https://github.com/beyondnlp/nlp-tutorial/blob/master/4-2.Seq2Seq(Attention)/Seq
 https://github.com/golbin/TensorFlow-Tutorials/blob/master/10%20-%20RNN/03%20-%20Seq2Seq.py
 """
 
+DEBUG=0
 uc_data = UmChaTransData()
 sources_train, sources_dev, outputs_train, outputs_dev, targets_train, targets_dev = uc_data.get_suffled_data()
 ##
@@ -43,18 +46,6 @@ def one_hot(bats, max_len):
         new_bats[bidx][:len(bat)] = [np.eye(n_class) [idx] for idx in bat]
     return new_bats
 
-def get_att_weights(dec_output, enc_outputs):
-    att_scores = []
-    enc_outputs = tf.transpose(enc_outputs, [1, 0, 2]) # (step, batch, hidden)
-    for i in range(n_step):
-        score = tf.squeeze(tf.matmul(enc_outputs[i], att), 0) # (hidden)
-        att_score = tf.tensordot(tf.squeeze(dec_output, [0, 1]), score, 1) # inner product make scalar value
-        att_scores.append(att_score)
-    return tf.reshape(tf.nn.softmax(att_scores), [1, 1, -1]) # [1, 1, step]
-    
-#model = []
-#attention = []
-
 with tf.variable_scope('encode'):
     enc_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
     enc_cell = tf.nn.rnn_cell.DropoutWrapper(enc_cell, output_keep_prob=out_keep_prob)
@@ -76,15 +67,27 @@ with tf.variable_scope('decode'):
     # accuracy
     with tf.name_scope("accuracy"):
         prediction = tf.argmax(logits, 2)
+
+
+        loss_mask = tf.sequence_mask(sequence_length, tf.shape(targets)[1])
+        prediction_mask = prediction * tf.to_int64(loss_mask)
         #answer = tf.argmax(targets, 2)
         #correct_pred = tf.equal(prediction, answer)#targets)
-        correct_pred = tf.equal(prediction, targets)
+        correct_pred = tf.equal(prediction_mask, targets)
         accuracy = tf.reduce_mean(tf.cast(correct_pred, "float"), name="accuracy")
     optimizer = tf.train.AdamOptimizer(learning_rate).minimize(loss)
 
 # Train and Test
 with tf.Session() as sess:
     init = tf.global_variables_initializer()
+    timestamp = str(int(time.time()))
+    out_dir = os.path.abspath(os.path.join(os.path.curdir, "runs", timestamp))
+    print("Writing to {}\n".format(out_dir))
+
+    train_summary_merge = tf.summary.merge_all()
+
+    train_summary_dir = os.path.join(out_dir, "summaries", "train")
+    train_summary_writer = tf.summary.FileWriter(train_summary_dir, sess.graph)
     sess.run(init)
     ## train 
     batchs = uc_data.batch_iter(train_set, batch_size, epochs)
@@ -100,13 +103,31 @@ with tf.Session() as sess:
         #print "epoch >", epoch, np.shape(nt_bat)
         feed = {enc_inputs:x_bat, dec_inputs:y_bat, targets: nt_bat, out_keep_prob:keep_prob, sequence_length:t_seq_len}
         #feed = {enc_inputs:x_bat, dec_inputs:y_bat, targets: t_bat, out_keep_prob:keep_prob, sequence_length:t_seq_len}
-        _, _loss, acc = sess.run([optimizer, loss, accuracy], feed_dict=feed)
+
+        if DEBUG :
+            feed_opt={
+                'loss':loss,
+                'accuracy':accuracy,
+                'prediction': prediction,
+                'targets': targets,
+                'logits': logits,
+            }
+
+            results = sess.run(feed_opt, feed_dict=feed)
+            for key in results:
+                val = results[key]
+                print(key , ":", val, np.shape(val) )
+                sys.exit(0)
+
+        else:
+            _loss, _, acc = sess.run([ loss, optimizer, accuracy ], feed_dict=feed)
+             
         avg_loss += _loss
         avg_acc += acc
-        if (epoch + 1) % 100 == 0:
-            avg_loss /= 100
-            avg_acc /= 100
-            print('Epoch: %04d loss = %.6f / avg acc = %.6f ' % ((epoch + 1), avg_loss, avg_acc))
+        if (epoch + 1) % 10 == 0:
+            avg_loss /= 10
+            avg_acc /= 10
+            print('Epoch: %04d loss = %.6f / avg acc = %.6f (%.6f)' % ((epoch + 1), avg_loss, avg_acc, acc))
             avg_loss = 0
             avg_acc = 0
 
@@ -120,7 +141,7 @@ with tf.Session() as sess:
                 result = sess.run(prediction, feed_dict={enc_inputs:x_bat, dec_inputs: y_bat, out_keep_prob:1.0})
                 if dev_ep == 0:
                     decoded_str = ''.join([uc_data.tot_idx_word_dic[n] for n in result[0]])
-                    translated = ''.join(decoded_str[:decoded_str.index('E')])
+                    translated = ''.join(decoded_str[:decoded_str.index('')])
                     print translated
                 #if dev_ep == 100: 
                 break # 뭔가 내맘같지 않아..
