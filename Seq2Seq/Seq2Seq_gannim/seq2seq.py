@@ -15,6 +15,7 @@ https://github.com/golbin/TensorFlow-Tutorials/blob/master/10%20-%20RNN/03%20-%2
 """
 
 DEBUG=0
+
 uc_data = UmChaTransData()
 sources_train, sources_dev, outputs_train, outputs_dev, targets_train, targets_dev = uc_data.get_suffled_data()
 ##
@@ -29,48 +30,48 @@ n_class = len(uc_data.tot_word_idx_dic)
 learning_rate = 0.001
 keep_prob = 0.5
 
-##
-enc_inputs = tf.placeholder(tf.float32, [None, None, n_class]) # (batch, step, class)
-dec_inputs = tf.placeholder(tf.float32, [None, None, n_class]) # (batch, step, class)
+############# graph ################
+enc_inputs = tf.placeholder(tf.int64, [None, None]) # (batch, step)
+dec_inputs = tf.placeholder(tf.int64, [None, None]) # (batch, step)
 targets = tf.placeholder(tf.int64, [None, None]) # (batch, step)
 #targets = tf.placeholder(tf.int64, [None, None, n_class]) # (batch, step)
 
+out_keep_prob = tf.placeholder(tf.float32, name="out_keep_prob") # dropout
+##
+x_sequence_length = tf.placeholder(tf.int64, name="x_sequence_length") # batch sequence_length 
+y_sequence_length = tf.placeholder(tf.int64, name="y_sequence_length") # batch sequence_length 
+t_sequence_length = tf.placeholder(tf.int64, name="t_sequence_length") # batch sequence_length 
+
 att = tf.Variable(tf.random_normal([n_hidden, n_hidden]))
 out = tf.Variable(tf.random_normal([n_hidden * 2, n_class]))
-out_keep_prob = tf.placeholder(tf.float32, name="out_keep_prob") # dropout
-sequence_length = tf.placeholder(tf.int64, name="sequence_length") # batch sequence_length 
-##
-def one_hot(bats, max_len):
-    new_bats = np.zeros((batch_size, max_len, n_class), dtype='float32')
-    for bidx, bat in enumerate(bats):
-        new_bats[bidx][:len(bat)] = [np.eye(n_class) [idx] for idx in bat]
-    return new_bats
+
+enc_embeddings = tf.Variable(tf.random_normal([uc_data.tot_dic_len, n_hidden]))
+dec_embeddings = tf.Variable(tf.random_normal([uc_data.tot_dic_len, n_hidden]))
 
 with tf.variable_scope('encode'):
+    enc_input_embeddings = tf.nn.embedding_lookup(enc_embeddings, enc_inputs) 
     enc_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
     enc_cell = tf.nn.rnn_cell.DropoutWrapper(enc_cell, output_keep_prob=out_keep_prob)
-    enc_outputs, enc_hidden = tf.nn.dynamic_rnn(enc_cell, enc_inputs, dtype=tf.float32)
+    enc_outputs, enc_hidden = tf.nn.dynamic_rnn(enc_cell, enc_input_embeddings, sequence_length=x_sequence_length, dtype=tf.float32)
 
 with tf.variable_scope('decode'):
+    dec_input_embeddings = tf.nn.embedding_lookup(dec_embeddings, dec_inputs) 
     dec_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
     dec_cell = tf.nn.rnn_cell.DropoutWrapper(dec_cell, output_keep_prob=out_keep_prob)
     ##
-    outputs, dec_states = tf.nn.dynamic_rnn(dec_cell, dec_inputs, initial_state=enc_hidden, dtype=tf.float32)
+    outputs, dec_states = tf.nn.dynamic_rnn(dec_cell, dec_input_embeddings, initial_state=enc_hidden, sequence_length=y_sequence_length, dtype=tf.float32)
     logits = tf.layers.dense(outputs, n_class, activation=None)
     # loss
+    t_mask = tf.sequence_mask(t_sequence_length, tf.shape(targets)[1])
     with tf.name_scope("loss"):
         losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=targets)
         #losses = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=targets)
-        loss_mask = tf.sequence_mask(sequence_length, tf.shape(targets)[1])
-        losses = losses * tf.to_float(loss_mask)
+        losses = losses * tf.to_float(t_mask)
         loss = tf.reduce_mean(losses)
     # accuracy
     with tf.name_scope("accuracy"):
         prediction = tf.argmax(logits, 2)
-
-
-        loss_mask = tf.sequence_mask(sequence_length, tf.shape(targets)[1])
-        prediction_mask = prediction * tf.to_int64(loss_mask)
+        prediction_mask = prediction * tf.to_int64(t_mask)
         #answer = tf.argmax(targets, 2)
         #correct_pred = tf.equal(prediction, answer)#targets)
         correct_pred = tf.equal(prediction_mask, targets)
@@ -94,14 +95,24 @@ with tf.Session() as sess:
     avg_loss, avg_acc = 0, 0
     for epoch, batch in enumerate(batchs):
         x_bat, y_bat, t_bat = zip(*batch)
-        x_bat, y_bat = one_hot(x_bat, uc_data.max_inputs_seq_length), one_hot(y_bat, uc_data.max_outputs_seq_length)
-        nt_bat = np.zeros((batch_size, uc_data.max_outputs_seq_length))
+        nx_bat = np.zeros((batch_size, uc_data.max_inputs_seq_length)) 
+        ny_bat = np.zeros((batch_size, uc_data.max_outputs_seq_length)) 
+        nt_bat = np.zeros((batch_size, uc_data.max_targets_seq_length)) 
+        x_seq_len = np.zeros((batch_size))
+        y_seq_len = np.zeros((batch_size))
         t_seq_len = np.zeros((batch_size))
+        ##
+        for idx in range(np.shape(x_bat)[0]):
+            nx_bat[idx][:len(x_bat[idx])] = x_bat[idx]
+            x_seq_len[idx] = len(x_bat[idx])
+        for idx in range(np.shape(y_bat)[0]):
+            ny_bat[idx][:len(y_bat[idx])] = y_bat[idx]
+            y_seq_len[idx] = len(y_bat[idx])
         for idx in range(np.shape(t_bat)[0]):
             nt_bat[idx][:len(t_bat[idx])] = t_bat[idx]
             t_seq_len[idx] = len(t_bat[idx])
         #print "epoch >", epoch, np.shape(nt_bat)
-        feed = {enc_inputs:x_bat, dec_inputs:y_bat, targets: nt_bat, out_keep_prob:keep_prob, sequence_length:t_seq_len}
+        feed = {enc_inputs:nx_bat, dec_inputs:ny_bat, targets: nt_bat, out_keep_prob:keep_prob, x_sequence_length:x_seq_len, y_sequence_length:y_seq_len, t_sequence_length:t_seq_len}
         #feed = {enc_inputs:x_bat, dec_inputs:y_bat, targets: t_bat, out_keep_prob:keep_prob, sequence_length:t_seq_len}
 
         if DEBUG :
@@ -134,16 +145,27 @@ with tf.Session() as sess:
             dev_batchs = uc_data.batch_iter(dev_set, batch_size, 1)
             avg_dev_loss, avg_dev_acc = 0, 0
             for dev_ep, dev_batch in enumerate(dev_batchs):
-                x_bat, y_bat, t_bat = zip(*batch)
+                x_bat, y_bat, _ = zip(*batch)
                 if dev_ep == 0:
                     print '{} ->'.format(''.join(uc_data.tot_idx_word_dic[n] for n in x_bat[0])),
-                x_bat, y_bat = one_hot(x_bat, uc_data.max_inputs_seq_length), one_hot(y_bat, uc_data.max_outputs_seq_length)
-                result = sess.run(prediction, feed_dict={enc_inputs:x_bat, dec_inputs: y_bat, out_keep_prob:1.0})
+                nx_bat = np.zeros((batch_size, uc_data.max_inputs_seq_length)) 
+                ny_bat = np.zeros((batch_size, uc_data.max_outputs_seq_length)) 
+                x_seq_len = np.zeros((batch_size))
+                y_seq_len = np.zeros((batch_size))
+                ##
+                for idx in range(np.shape(x_bat)[0]):
+                    nx_bat[idx][:len(x_bat[idx])] = x_bat[idx]
+                    x_seq_len[idx] = len(x_bat[idx])
+                for idx in range(np.shape(y_bat)[0]):
+                    ny_bat[idx][:len(y_bat[idx])] = y_bat[idx]
+                    y_seq_len[idx] = len(y_bat[idx])
+                result = sess.run(prediction, feed_dict={enc_inputs:nx_bat, dec_inputs: ny_bat, out_keep_prob:1.0, x_sequence_length:x_seq_len, y_sequence_length:y_seq_len})
                 if dev_ep == 0:
                     decoded_str = ''.join([uc_data.tot_idx_word_dic[n] for n in result[0]])
-                    translated = ''.join(decoded_str[:decoded_str.index('')])
+                    if '' in decoded_str:
+                        translated = ''.join(decoded_str[:decoded_str.index('')])
+                    else:
+                        translated = decoded_str
                     print translated
-                #if dev_ep == 100: 
                 break # 뭔가 내맘같지 않아..
             #print(' dev > loss = %.6f / avg acc = %.6f ' % (avg_dev_loss/(dev_ep+1), avg_dev_acc/(dev_ep+1)))
-    ##

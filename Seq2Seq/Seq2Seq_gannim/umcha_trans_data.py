@@ -76,6 +76,7 @@ class UmChaTransData(object):
         self.max_outputs_seq_length = max([len(txt) for txt in self.outputs])
         self.max_targets_seq_length = max([len(txt) for txt in self.targets])
         ## idx to word
+        self.tot_dic_len = len(self.tot_word_idx_dic)
         self.tot_idx_word_dic = self.get_idx_word_dic(self.tot_word_idx_dic)
         ## convert to array
         self.input_inputs = self.convert_word_to_idx(self.inputs, self.tot_word_idx_dic)
