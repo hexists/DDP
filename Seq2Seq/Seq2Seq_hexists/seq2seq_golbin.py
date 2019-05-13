@@ -10,6 +10,7 @@ import tensorflow as tf
 import numpy as np
 import time
 import os
+import sys
 
 # S: 디코딩 입력의 시작을 나타내는 심볼
 # E: 디코딩 출력을 끝을 나타내는 심볼
@@ -100,6 +101,62 @@ tf.summary.scalar('accuracy', accuracy)
 
 optimizer = tf.train.AdamOptimizer(learning_rate).minimize(loss)
 
+
+### inference graph
+def stop_cond_len(i, inp_dec_state, inp_pred_onehot_output, output_tensor_t):
+    return tf.less(i, dic_len)
+
+def stop_cond(i, inp_dec_state, inp_pred_onehot_output, output_tensor_t):
+    print('>>> inp_dec_state: {}'.format(inp_dec_state)) 
+    print('>>> inp_pred_onehot_output: {}'.format(inp_pred_onehot_output)) 
+    return tf.less(i, dic_len)
+    if tf.equal(end_idx, tf.argmax(inp_pred_onehot_output, 2)) is True or tf.less(i, dic_len * 2) is False:
+        return False
+    return True
+
+def trans_body(i, inp_dec_state, inp_pred_onehot_output, output_tensor_t):
+    print('!!! inp_dec_state: {}'.format(inp_dec_state)) 
+    print('!!! inp_pred_onehot_output: {}'.format(inp_pred_onehot_output)) 
+    print()
+
+    dec_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
+    dec_cell = tf.nn.rnn_cell.DropoutWrapper(dec_cell, output_keep_prob=0.5)
+
+    dec_output, dec_state = tf.nn.dynamic_rnn(dec_cell, inp_pred_onehot_output, initial_state=inp_dec_state, dtype=tf.float32)
+
+    model = tf.layers.dense(dec_output, n_class, activation=None)
+
+    prediction = tf.argmax(model, 2)
+    pred_onehot_output = tf.one_hot(prediction, dic_len)
+    print('!!! dec_state: {}'.format(dec_state)) 
+    print('!!! pred_onehot_output: {}'.format(pred_onehot_output)) 
+    print()
+
+    output_tensor_t = output_tensor_t.write( i, prediction )
+
+    i = tf.add(i, 1)
+
+    return [i, dec_state, pred_onehot_output, output_tensor_t]
+
+end_idx = tf.constant([[num_dic['E']]], tf.int64)
+
+pl_dec_input = tf.placeholder(tf.float32, [None, None, n_input])
+pl_dec_state = tf.placeholder(tf.float32, [None, n_hidden])
+
+output_tensor_t = tf.TensorArray(tf.int64, size = dic_len)
+
+_, _, _, output_tensor_t = tf.while_loop(
+    cond = stop_cond,
+    body = trans_body,
+    loop_vars = [tf.constant(0), pl_dec_state, pl_dec_input, output_tensor_t]
+)
+
+print('output_tensor_t: {}'.format(output_tensor_t)) 
+inf_result = output_tensor_t.stack()
+print('inf_result: {}'.format(inf_result)) 
+inf_result = tf.reshape( inf_result, [-1] ) 
+# print('inf_result: {}'.format(inf_result)) 
+
 #########
 # 신경망 모델 학습
 #########
@@ -124,9 +181,9 @@ for epoch in range(total_epoch):
                                   dec_input: output_batch,
                                   targets: target_batch})
 
-    print('Epoch:', '%04d' % (epoch + 1),
-          'loss =', '{:.6f}'.format(train_loss),
-          'acc =', '{:.6f}'.format(train_acc))
+    # print('Epoch:', '%04d' % (epoch + 1),
+    #       'loss =', '{:.6f}'.format(train_loss),
+    #       'acc =', '{:.6f}'.format(train_acc))
 
     train_summary_writer.add_summary(train_summary, epoch)
 
@@ -202,18 +259,56 @@ def translate_v2(word):
 
     return ''.join(translated)
 
-print('\n=== 번역 테스트 ===')
+def translate_v3(word):
+    # 이 모델은 입력값과 출력값 데이터로 [영어단어, 한글단어] 사용하지만,
+    # 예측시에는 한글단어를 알지 못하므로, 디코더의 입출력값을 의미 없는 값인 P 값으로 채운다.
+    # ['word', 'PPPP']
+    # 단어를 입력받아 번역 단어를 예측하고 디코딩하는 함수
+    seq_data = [word, 'P' * len(word)]
 
-print('word ->', translate('word'))
-print('wodr ->', translate('wodr'))
-print('love ->', translate('love'))
-print('loev ->', translate('loev'))
-print('abcd ->', translate('abcd'))
+    translated = []
 
-print('\n=== 번역 테스트 v2 ===')
+    input_batch, pred_onehot_batch, _ = make_batch([seq_data])
+    st_pred_onehot_output = [[pred_onehot_batch[0][0]]]
 
-print('word ->', translate_v2('word'))
-print('wodr ->', translate_v2('wodr'))
-print('love ->', translate_v2('love'))
-print('loev ->', translate_v2('loev'))
-print('abcd ->', translate_v2('abcd'))
+    _, st_dec_states = sess.run(encoder_model, feed_dict={enc_input: input_batch})
+
+    # print('===dec_states: {}'.format(st_dec_states))
+    # print('===pred_onehot_output : {}'.format(st_pred_onehot_output))
+
+    # print('===dec_inference: {}'.format(dec_inference))
+    # print('===dec_output_states: {}'.format(dec_output_states))
+    # print('===pred_outputs: {}'.format(pred_outputs))
+    print()
+
+    result = sess.run(inf_result, feed_dict={pl_dec_state: st_dec_states, pl_dec_input:st_pred_onehot_output})
+    print(result)
+
+    # 결과 값인 숫자의 인덱스에 해당하는 글자를 가져와 글자 배열을 만든다.
+    decoded = [char_arr[i] for i in result]
+
+    # 출력의 끝을 의미하는 'E' 이후의 글자들을 제거하고 문자열로 만든다.
+    end = decoded.index('E')
+    return ''.join(decoded[:end])
+    # dec_output_states, pred_outputs = sess.run(dec_inference)
+
+
+# print('\n=== 번역 테스트 ===')
+# 
+# print('word ->', translate('word'))
+# print('wodr ->', translate('wodr'))
+# print('love ->', translate('love'))
+# print('loev ->', translate('loev'))
+# print('abcd ->', translate('abcd'))
+# 
+# print('\n=== 번역 테스트 v2 ===')
+# 
+# print('word ->', translate_v2('word'))
+# print('wodr ->', translate_v2('wodr'))
+# print('love ->', translate_v2('love'))
+# print('loev ->', translate_v2('loev'))
+# print('abcd ->', translate_v2('abcd'))
+# 
+print('\n=== 번역 테스트 v3 ===')
+
+print('word ->', translate_v3('word'))
