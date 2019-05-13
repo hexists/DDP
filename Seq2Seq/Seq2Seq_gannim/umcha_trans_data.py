@@ -10,6 +10,9 @@ class UmChaTransData(object):
     # E: 디코딩 출력을 끝을 나타내는 심볼
     # P: 현재 배치 데이터의 time step 크기보다 작은 경우 빈 시퀀스를 채우는 심볼
 
+    START_SYMBOL = ''
+    PAD_SYMBOL = ''
+    END_SYMBOL = ''
     def __init__(self):
         self.load_source_target()
 
@@ -36,17 +39,33 @@ class UmChaTransData(object):
     def get_idx_word_dic(word_idx_dic):
         return {word_idx_dic[key]:key for key in word_idx_dic.keys()}
             
+    def save_vocab(self, path):
+        with open('{}'.format(path), 'w') as ff:
+            ff.write("tot_datas\n")
+            for source, target in self.tot_datas:
+                ff.write("{}\t{}\n".format(source, target))
+            ff.write("tot_dic_len\n")
+
+            ff.write("\n")
+        ## idx to word
+        self.tot_dic_len = len(self.tot_word_idx_dic)
+        self.tot_idx_word_dic = self.get_idx_word_dic(self.tot_word_idx_dic)
+        ## convert to array
+        self.input_inputs = self.convert_word_to_idx(self.inputs, self.tot_word_idx_dic)
+        self.input_outputs = self.convert_word_to_idx(self.outputs, self.tot_word_idx_dic)
+        self.input_targets = self.convert_word_to_idx(self.targets, self.tot_word_idx_dic)
+        
     def get_word_dic(self, tot_datas):
         inputs = []
         outputs = []
         targets = []
-        tot_word_idx_dic = {'':0, '':1, '':2} # 
+        tot_word_idx_dic = {self.PAD_SYMBOL:0, self.START_SYMBOL:1, self.END_SYMBOL:2} # 
         for input, output in tot_datas:
             inputs.append(self.cut_utf8(input))
             # 디코더 셀의 입력값. 시작을 나타내는 S() 심볼을 맨 앞에 붙여준다.
-            outputs.append(self.cut_utf8('{}'.format(output))) 
+            outputs.append(self.cut_utf8('{}{}'.format(self.START_SYMBOL,output))) 
             # 학습을 위해 비교할 디코더 셀의 출력값. 끝나는 것을 알려주기 위해 마지막에 E 를 붙인다.
-            targets.append(self.cut_utf8('{}'.format(output))) 
+            targets.append(self.cut_utf8('{}{}'.format(output, self.END_SYMBOL))) 
             self.update_word_idx_dic(tot_word_idx_dic, inputs[-1])
             self.update_word_idx_dic(tot_word_idx_dic, outputs[-1])
             self.update_word_idx_dic(tot_word_idx_dic, targets[-1])
@@ -57,7 +76,7 @@ class UmChaTransData(object):
         outputs = []
         for x, y in datas:
             inputs.append(self.cut_utf8(x))
-            outputs.append(self.cut_utf8('{}'.format(y)))
+            outputs.append(self.cut_utf8('{}{}'.format(self.START_SYMBOL,y)))
         input_inputs = self.convert_word_to_idx(inputs, self.tot_word_idx_dic)
         input_outputs = self.convert_word_to_idx(outputs, self.tot_word_idx_dic)
         return input_inputs, input_outputs, max([len(txt) for txt in inputs]), max([len(txt) for txt in outputs])
