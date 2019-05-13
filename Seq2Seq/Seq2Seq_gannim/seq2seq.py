@@ -49,13 +49,15 @@ dec_embeddings = tf.Variable(tf.random_normal([uc_data.tot_dic_len, n_hidden]))
 
 with tf.variable_scope('encode'):
     enc_input_embeddings = tf.nn.embedding_lookup(enc_embeddings, enc_inputs) 
-    enc_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
+    #enc_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
+    enc_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
     enc_cell = tf.nn.rnn_cell.DropoutWrapper(enc_cell, output_keep_prob=out_keep_prob)
     enc_outputs, enc_hidden = tf.nn.dynamic_rnn(enc_cell, enc_input_embeddings, sequence_length=x_sequence_length, dtype=tf.float32)
 
 with tf.variable_scope('decode'), tf.name_scope('decode'):
     dec_input_embeddings = tf.nn.embedding_lookup(dec_embeddings, dec_inputs) 
-    dec_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
+    #dec_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
+    dec_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
     dec_cell = tf.nn.rnn_cell.DropoutWrapper(dec_cell, output_keep_prob=out_keep_prob)
     ##
     outputs, dec_states = tf.nn.dynamic_rnn(dec_cell, dec_input_embeddings, initial_state=enc_hidden, sequence_length=y_sequence_length, dtype=tf.float32)
