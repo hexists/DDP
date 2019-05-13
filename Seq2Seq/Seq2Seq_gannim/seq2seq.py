@@ -33,7 +33,6 @@ keep_prob = 0.5
 ############# graph ################
 enc_inputs = tf.placeholder(tf.int64, [None, None]) # (batch, step)
 dec_inputs = tf.placeholder(tf.int64, [None, None]) # (batch, step)
-inf_dec_inputs = tf.placeholder(tf.int64, [None, None]) # (batch, step)
 targets = tf.placeholder(tf.int64, [None, None]) # (batch, step)
 #targets = tf.placeholder(tf.int64, [None, None, n_class]) # (batch, step)
 
@@ -55,13 +54,13 @@ with tf.variable_scope('encode'):
     enc_cell = tf.nn.rnn_cell.DropoutWrapper(enc_cell, output_keep_prob=out_keep_prob)
     enc_outputs, enc_hidden = tf.nn.dynamic_rnn(enc_cell, enc_input_embeddings, sequence_length=x_sequence_length, dtype=tf.float32)
 
-with tf.variable_scope('decode'):
+with tf.variable_scope('decode'), tf.name_scope('decode'):
     dec_input_embeddings = tf.nn.embedding_lookup(dec_embeddings, dec_inputs) 
     dec_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
     dec_cell = tf.nn.rnn_cell.DropoutWrapper(dec_cell, output_keep_prob=out_keep_prob)
     ##
     outputs, dec_states = tf.nn.dynamic_rnn(dec_cell, dec_input_embeddings, initial_state=enc_hidden, sequence_length=y_sequence_length, dtype=tf.float32)
-    logits = tf.layers.dense(outputs, n_class, activation=None)
+    logits = tf.layers.dense(outputs, n_class, activation=None, reuse=tf.AUTO_REUSE, name='output_layer')
     # loss
     t_mask = tf.sequence_mask(t_sequence_length, tf.shape(targets)[1])
     with tf.name_scope("loss"):
@@ -82,29 +81,17 @@ with tf.variable_scope('decode'):
 ## inferance
 def cond(i, pred, dstate, ot):
     return tf.less(i, uc_data.max_targets_seq_length)
-    #if tf.equal(pred, [[2]])[0][0] is True:
-    #    if tf.less(i, uc_data.max_targets_seq_length) is True:
-    #        return True
-    #return False
-##
+    
 def body(i, dec_before_inputs, before_state, output_tensor_t):
-    with tf.variable_scope('decode_inf'):
-        #i = tf.Print(i, [i], 'i :')
-        #dec_before_inputs = tf.Print(dec_before_inputs, [dec_before_inputs], 'inputs :')
+    with tf.variable_scope('decode'), tf.name_scope('decode'):
         inf_dec_input_embeddings = tf.nn.embedding_lookup(dec_embeddings, dec_before_inputs) 
-        inf_dec_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
-        ##
-        #dec_input_embeddings = tf.Print(dec_input_embeddings, [dec_input_embeddings], 'dec_input_embeddings')
-        #before_state = tf.Print(before_state, [before_state], ' state :')
-        outputs, dec_states = tf.nn.dynamic_rnn(inf_dec_cell, inf_dec_input_embeddings, initial_state=before_state, dtype=tf.float32)
-        logits = tf.layers.dense(outputs, n_class, activation=None)
-        ##
+        inf_outputs, inf_dec_states = tf.nn.dynamic_rnn(dec_cell, inf_dec_input_embeddings, initial_state=before_state, dtype=tf.float32)
+        logits = tf.layers.dense(inf_outputs, n_class, activation=None, reuse=tf.AUTO_REUSE, name='output_layer')
         prediction = tf.argmax(logits, 2)
-        #prediction = tf.Print(prediction, [prediction], 'prediction :')
-        #dec_states = tf.Print(dec_states, [dec_states], ' des_state :')
         output_tensor_t = output_tensor_t.write( i, prediction )
-    return i+1, prediction, dec_states, output_tensor_t
+    return i+1, prediction, inf_dec_states, output_tensor_t
 
+inf_dec_inputs = tf.placeholder(tf.int64, [None, None]) # (batch, step)
 inf_before_state = tf.placeholder(tf.float32, [None, n_hidden]) # (batch, )
 output_tensor_t = tf.TensorArray(tf.int64, size = uc_data.max_targets_seq_length)
 _, _, _, output_tensor_t = tf.while_loop(cond=cond, body=body, loop_vars=[tf.constant(0), inf_dec_inputs, inf_before_state, output_tensor_t])
@@ -220,7 +207,6 @@ def trans_umchar(sess, input_word):
     ## decode
     y_bat = uc_data.get_input_idxs('') #[[1]] 
     result = sess.run(inf_result, feed_dict={inf_dec_inputs:y_bat, inf_before_state:inf_enc_state, out_keep_prob:1.0})
-    , inf_before_state:inf_enc_state, out_keep_prob:1.0})
     decoded_str = ''.join([uc_data.tot_idx_word_dic[n] for n in result])
     if '' in decoded_str:
         translated = ''.join(decoded_str[:decoded_str.index('')])
