@@ -17,7 +17,7 @@ https://github.com/golbin/TensorFlow-Tutorials/blob/master/10%20-%20RNN/03%20-%2
 DEBUG=0
 EVAL_EVERY = 100
 NUM_CHECKPOINTS = 5
-CHECKPOINT_EVERY = 100
+CHECKPOINT_EVERY = 1000
 
 uc_data = UmChaTransData()
 sources_train, sources_dev, outputs_train, outputs_dev, targets_train, targets_dev = uc_data.get_suffled_data()
@@ -47,20 +47,43 @@ t_sequence_length = tf.placeholder(tf.int64, name="t_sequence_length") # batch s
 enc_embeddings = tf.Variable(tf.random_normal([uc_data.tot_dic_len, n_hidden]))
 dec_embeddings = tf.Variable(tf.random_normal([uc_data.tot_dic_len, n_hidden]))
 
+cell_type = 'bi-lstm'
 with tf.variable_scope('encode'):
     enc_input_embeddings = tf.nn.embedding_lookup(enc_embeddings, enc_inputs) 
-    #enc_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
-    enc_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
-    enc_cell = tf.nn.rnn_cell.DropoutWrapper(enc_cell, output_keep_prob=out_keep_prob)
-    enc_outputs, enc_hidden = tf.nn.dynamic_rnn(enc_cell, enc_input_embeddings, sequence_length=x_sequence_length, dtype=tf.float32)
+    if cell_type == 'rnn':
+        enc_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
+        enc_cell = tf.nn.rnn_cell.DropoutWrapper(enc_cell, output_keep_prob=out_keep_prob)
+        enc_outputs, enc_hidden = tf.nn.dynamic_rnn(enc_cell, enc_input_embeddings, sequence_length=x_sequence_length, dtype=tf.float32)
+    elif cell_type == 'lstm':
+        enc_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
+        enc_cell = tf.nn.rnn_cell.DropoutWrapper(enc_cell, output_keep_prob=out_keep_prob)
+        enc_outputs, enc_hidden = tf.nn.dynamic_rnn(enc_cell, enc_input_embeddings, sequence_length=x_sequence_length, dtype=tf.float32)
+    elif cell_type == 'bi-lstm':
+        fw_enc_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
+        bw_enc_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
+        fw_enc_cell = tf.nn.rnn_cell.DropoutWrapper(fw_enc_cell, output_keep_prob=out_keep_prob)
+        bw_enc_cell = tf.nn.rnn_cell.DropoutWrapper(bw_enc_cell, output_keep_prob=out_keep_prob)
+        enc_outputs, enc_hidden = tf.nn.bidirectional_dynamic_rnn(fw_enc_cell, bw_enc_cell, enc_input_embeddings, x_sequence_length, dtype=tf.float32)
 
 with tf.variable_scope('decode'), tf.name_scope('decode'):
     dec_input_embeddings = tf.nn.embedding_lookup(dec_embeddings, dec_inputs) 
-    #dec_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
-    dec_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
-    dec_cell = tf.nn.rnn_cell.DropoutWrapper(dec_cell, output_keep_prob=out_keep_prob)
-    ##
-    outputs, dec_states = tf.nn.dynamic_rnn(dec_cell, dec_input_embeddings, initial_state=enc_hidden, sequence_length=y_sequence_length, dtype=tf.float32)
+    if cell_type == 'rnn':
+        dec_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
+        dec_cell = tf.nn.rnn_cell.DropoutWrapper(dec_cell, output_keep_prob=out_keep_prob)
+        outputs, dec_states = tf.nn.dynamic_rnn(dec_cell, dec_input_embeddings, initial_state=enc_hidden, sequence_length=y_sequence_length, dtype=tf.float32)
+    elif cell_type == 'lstm':
+        dec_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
+        dec_cell = tf.nn.rnn_cell.DropoutWrapper(dec_cell, output_keep_prob=out_keep_prob)
+        outputs, dec_states = tf.nn.dynamic_rnn(dec_cell, dec_input_embeddings, initial_state=enc_hidden, sequence_length=y_sequence_length, dtype=tf.float32)
+    elif cell_type == 'bi-lstm':
+        fw_enc_hidden, bw_enc_hidden = enc_hidden
+        fw_dec_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
+        bw_dec_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
+        fw_dec_cell = tf.nn.rnn_cell.DropoutWrapper(fw_dec_cell, output_keep_prob=out_keep_prob)
+        bw_dec_cell = tf.nn.rnn_cell.DropoutWrapper(bw_dec_cell, output_keep_prob=out_keep_prob)
+        dec_outputs, dec_hidden = tf.nn.bidirectional_dynamic_rnn(fw_dec_cell, bw_dec_cell, dec_input_embeddings, sequence_length=y_sequence_length, initial_state_fw=fw_enc_hidden, initial_state_bw=bw_enc_hidden, dtype=tf.float32)
+        fw_dec_outputs, bw_dec_outputs = dec_outputs
+        outputs = tf.concat([fw_dec_outputs, bw_dec_outputs], -1)
     logits = tf.layers.dense(outputs, n_class, activation=None, reuse=tf.AUTO_REUSE, name='output_layer')
     # loss
     t_mask = tf.sequence_mask(t_sequence_length, tf.shape(targets)[1])
@@ -76,24 +99,39 @@ with tf.variable_scope('decode'), tf.name_scope('decode'):
         accuracy = tf.reduce_mean(tf.cast(correct_pred, "float"), name="accuracy")
 
 ## inferance
-def cond(i, pred, dstate, ot):
-    return tf.less(i, uc_data.max_targets_seq_length)
+def false():
+    return False
+def true():
+    return True
+
+def cond(i, pred, dstate, ot, es):
+    # end symbol index = 2
+    p = tf.reshape(pred, [])
+    e = tf.reshape(es, [])
+    return tf.case({tf.greater_equal(i, uc_data.max_targets_seq_length): false, tf.equal(p, e): false}, default=true)
     
-def body(i, dec_before_inputs, before_state, output_tensor_t):
+def body(i, dec_before_inputs, before_state, output_tensor_t, end_symbol):
     with tf.variable_scope('decode'), tf.name_scope('decode'):
         inf_dec_input_embeddings = tf.nn.embedding_lookup(dec_embeddings, dec_before_inputs) 
-        inf_outputs, inf_dec_states = tf.nn.dynamic_rnn(dec_cell, inf_dec_input_embeddings, initial_state=before_state, dtype=tf.float32)
+        if cell_type in ['rnn', 'lstm']:
+            inf_outputs, inf_dec_states = tf.nn.dynamic_rnn(dec_cell, inf_dec_input_embeddings, initial_state=before_state, dtype=tf.float32)
+        elif cell_type == 'bi-lstm':
+            fw_before_hidden, bw_before_hidden = before_state
+            inf_dec_outputs, inf_dec_states = tf.nn.bidirectional_dynamic_rnn(fw_dec_cell, bw_dec_cell, inf_dec_input_embeddings, sequence_length=[1], initial_state_fw=fw_before_hidden, initial_state_bw=bw_before_hidden, dtype=tf.float32)
+            fw_inf_dec_outputs, bw_inf_dec_outputs = inf_dec_outputs
+            inf_outputs = tf.concat([fw_inf_dec_outputs, bw_inf_dec_outputs], -1)
         logits = tf.layers.dense(inf_outputs, n_class, activation=None, reuse=tf.AUTO_REUSE, name='output_layer')
         prediction = tf.argmax(logits, 2)
         output_tensor_t = output_tensor_t.write( i, prediction )
-    return i+1, prediction, inf_dec_states, output_tensor_t
+    return i+1, prediction, inf_dec_states, output_tensor_t, end_symbol
 
 inf_dec_inputs = tf.placeholder(tf.int64, [None, None]) # (batch, step)
-output_tensor_t = tf.TensorArray(tf.int64, size = uc_data.max_targets_seq_length)
-_, _, _, output_tensor_t = tf.while_loop(
+end_symbol_idx = tf.convert_to_tensor(np.array([[2]]), dtype=tf.int64)
+output_tensor_t = tf.TensorArray(tf.int64, size = 0, dynamic_size=True) #uc_data.max_targets_seq_length)
+_, _, _, output_tensor_t, _ = tf.while_loop(
     cond=cond,
     body=body,
-    loop_vars=[tf.constant(0), inf_dec_inputs, enc_hidden, output_tensor_t])
+    loop_vars=[tf.constant(0), inf_dec_inputs, enc_hidden, output_tensor_t, end_symbol_idx])
 inf_result = output_tensor_t.stack()
 inf_result = tf.reshape( inf_result, [-1] ) 
 
@@ -198,8 +236,6 @@ def train():
                 avg_dev_loss, avg_dev_acc = 0, 0
                 for dev_ep, dev_batch in enumerate(dev_batchs):
                     x_bat, y_bat, _ = zip(*batch)
-                    if dev_ep == 0:
-                        print 'devset {} ->'.format(''.join(uc_data.tot_idx_word_dic[n] for n in x_bat[0])),
                     nx_bat = np.zeros((batch_size, uc_data.max_inputs_seq_length)) 
                     ny_bat = np.zeros((batch_size, uc_data.max_outputs_seq_length)) 
                     nt_bat = np.zeros((batch_size, uc_data.max_targets_seq_length)) 
@@ -220,23 +256,26 @@ def train():
                     avg_dev_loss += dev_loss
                     avg_dev_acc += dev_acc
                     if dev_ep == 0:
-                        print get_umchar_str(result[0])
+                        input_word = get_umchar_str(x_bat[0])
+                        print 'inferance {} -> {}'.format(input_word, transiteration(sess, input_word))
+                        print 'devset    {} -> {}'.format(input_word, get_umchar_str(result[0]))
                 blen = dev_ep+1
                 dev_summary_writer.add_summary(dev_summ, cur_step)
                 print("\nEvaluation : dev loss = %.6f / dev acc = %.6f" %(avg_dev_loss/blen, avg_dev_acc/blen))
-
-                transiteration(sess, 'apple')
             if cur_step % CHECKPOINT_EVERY == 0:
                 path = saver.save(sess, checkpoint_prefix, global_step=cur_step)
                 print("Saved model checkpoint to {}\n".format(path))
         ## 학습 다하고 최종!
         print "final inferance"
-        transiteration(sess, 'apple')
+        input_word = 'apple'
+        translated = transiteration(sess, input_word)
+        print '{} -> {}'.format(input_word, translated)
     
 def transiteration(sess, input_word):
     x_bat = uc_data.get_input_idxs(input_word) # [[44 45 42]] 
     x_len = np.array([len(x_bat[0])]) # [[3]]
     y_bat = uc_data.get_input_idxs(uc_data.START_SYMBOL) #[[1]] 
     result = sess.run(inf_result, feed_dict={enc_inputs:x_bat, inf_dec_inputs:y_bat, x_sequence_length:x_len, out_keep_prob:1.0})
-    print '{} -> {}'.format(input_word, get_umchar_str(result))
+    translated = get_umchar_str(result)
+    return translated
 train()
