@@ -78,7 +78,7 @@ with tf.variable_scope('encode'):
     outputs, enc_states = encoder_model = tf.nn.dynamic_rnn(enc_cell, enc_input, dtype=tf.float32)
 
 # 디코더 셀을 구성한다.
-with tf.variable_scope('decode'):
+with tf.variable_scope('decode'), tf.name_scope('decode'):
     dec_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
     dec_cell = tf.nn.rnn_cell.DropoutWrapper(dec_cell, output_keep_prob=0.5)
 
@@ -88,7 +88,7 @@ with tf.variable_scope('decode'):
                                             initial_state=enc_states,
                                             dtype=tf.float32)
 
-model = tf.layers.dense(outputs, n_class, activation=None)
+    model = tf.layers.dense(outputs, n_class, activation=None, reuse=tf.AUTO_REUSE, name='output_layer')
 
 # Loss
 loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=model, labels=targets))
@@ -101,54 +101,51 @@ tf.summary.scalar('accuracy', accuracy)
 
 optimizer = tf.train.AdamOptimizer(learning_rate).minimize(loss)
 
+end_idx = tf.constant([[num_dic['E']]], tf.int64)
 
 ### inference graph
-def stop_cond_len(i, inp_dec_state, inp_pred_onehot_output, output_tensor_t):
-    return tf.less(i, dic_len)
-
 def stop_cond(i, inp_dec_state, inp_pred_onehot_output, output_tensor_t):
-    print('>>> inp_dec_state: {}'.format(inp_dec_state)) 
-    print('>>> inp_pred_onehot_output: {}'.format(inp_pred_onehot_output)) 
-    return tf.less(i, dic_len)
-    if tf.equal(end_idx, tf.argmax(inp_pred_onehot_output, 2)) is True or tf.less(i, dic_len * 2) is False:
+    def ret_true():
+        return True
+    def ret_false():
         return False
-    return True
+    def is_less():
+        return tf.cond(tf.less(i, dic_len), ret_true, ret_false)
+        
+    return tf.cond(tf.reshape(tf.equal(end_idx, tf.argmax(inp_pred_onehot_output, 2)), []), ret_false, is_less)
 
 def trans_body(i, inp_dec_state, inp_pred_onehot_output, output_tensor_t):
     print('!!! inp_dec_state: {}'.format(inp_dec_state)) 
     print('!!! inp_pred_onehot_output: {}'.format(inp_pred_onehot_output)) 
     print()
 
-    dec_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
-    dec_cell = tf.nn.rnn_cell.DropoutWrapper(dec_cell, output_keep_prob=0.5)
+    with tf.variable_scope('decode'), tf.name_scope('decode'):
+        dec_output, dec_state = tf.nn.dynamic_rnn(dec_cell, inp_pred_onehot_output, initial_state=inp_dec_state, dtype=tf.float32)
 
-    dec_output, dec_state = tf.nn.dynamic_rnn(dec_cell, inp_pred_onehot_output, initial_state=inp_dec_state, dtype=tf.float32)
+        model = tf.layers.dense(dec_output, n_class, activation=None, reuse=tf.AUTO_REUSE, name='output_layer')
 
-    model = tf.layers.dense(dec_output, n_class, activation=None)
+        prediction = tf.argmax(model, 2)
 
-    prediction = tf.argmax(model, 2)
-    pred_onehot_output = tf.one_hot(prediction, dic_len)
-    print('!!! dec_state: {}'.format(dec_state)) 
-    print('!!! pred_onehot_output: {}'.format(pred_onehot_output)) 
-    print()
+        pred_onehot_output = tf.one_hot(prediction, dic_len)
 
-    output_tensor_t = output_tensor_t.write( i, prediction )
+        print('!!! dec_state: {}'.format(dec_state)) 
+        print('!!! pred_onehot_output: {}'.format(pred_onehot_output)) 
+        print()
+
+        output_tensor_t = output_tensor_t.write( i, prediction )
 
     i = tf.add(i, 1)
 
     return [i, dec_state, pred_onehot_output, output_tensor_t]
 
-end_idx = tf.constant([[num_dic['E']]], tf.int64)
-
 pl_dec_input = tf.placeholder(tf.float32, [None, None, n_input])
-pl_dec_state = tf.placeholder(tf.float32, [None, n_hidden])
 
 output_tensor_t = tf.TensorArray(tf.int64, size = dic_len)
 
 _, _, _, output_tensor_t = tf.while_loop(
     cond = stop_cond,
     body = trans_body,
-    loop_vars = [tf.constant(0), pl_dec_state, pl_dec_input, output_tensor_t]
+    loop_vars = [tf.constant(0), enc_states, pl_dec_input, output_tensor_t]
 )
 
 print('output_tensor_t: {}'.format(output_tensor_t)) 
@@ -271,7 +268,7 @@ def translate_v3(word):
     input_batch, pred_onehot_batch, _ = make_batch([seq_data])
     st_pred_onehot_output = [[pred_onehot_batch[0][0]]]
 
-    _, st_dec_states = sess.run(encoder_model, feed_dict={enc_input: input_batch})
+    # _, st_dec_states = sess.run(encoder_model, feed_dict={enc_input: input_batch})
 
     # print('===dec_states: {}'.format(st_dec_states))
     # print('===pred_onehot_output : {}'.format(st_pred_onehot_output))
@@ -281,7 +278,7 @@ def translate_v3(word):
     # print('===pred_outputs: {}'.format(pred_outputs))
     print()
 
-    result = sess.run(inf_result, feed_dict={pl_dec_state: st_dec_states, pl_dec_input:st_pred_onehot_output})
+    result = sess.run(inf_result, feed_dict={enc_input: input_batch, pl_dec_input:st_pred_onehot_output})
     print(result)
 
     # 결과 값인 숫자의 인덱스에 해당하는 글자를 가져와 글자 배열을 만든다.
