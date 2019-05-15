@@ -78,7 +78,7 @@ with tf.variable_scope('encode'):
     outputs, enc_states = encoder_model = tf.nn.dynamic_rnn(enc_cell, enc_input, dtype=tf.float32)
 
 # 디코더 셀을 구성한다.
-with tf.variable_scope('decode'), tf.name_scope('decode'):
+with tf.variable_scope('decode'):
     dec_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
     dec_cell = tf.nn.rnn_cell.DropoutWrapper(dec_cell, output_keep_prob=0.5)
 
@@ -119,7 +119,7 @@ def trans_body(i, inp_dec_state, inp_pred_onehot_output, output_tensor_t):
     print('!!! inp_pred_onehot_output: {}'.format(inp_pred_onehot_output)) 
     print()
 
-    with tf.variable_scope('decode'), tf.name_scope('decode'):
+    with tf.variable_scope('decode'):
         dec_output, dec_state = tf.nn.dynamic_rnn(dec_cell, inp_pred_onehot_output, initial_state=inp_dec_state, dtype=tf.float32)
 
         model = tf.layers.dense(dec_output, n_class, activation=None, reuse=tf.AUTO_REUSE, name='output_layer')
