@@ -5,7 +5,7 @@ import sys
 reload(sys)
 sys.setdefaultencoding('utf-8')
 
-class UmChaTransData(object):
+class dataHelper(object):
     # S: 디코딩 입력의 시작을 나타내는 심볼
     # E: 디코딩 출력을 끝을 나타내는 심볼
     # P: 현재 배치 데이터의 time step 크기보다 작은 경우 빈 시퀀스를 채우는 심볼

@@ -7,7 +7,7 @@ import os
 import time
 reload(sys)
 sys.setdefaultencoding('utf-8')
-from umcha_trans_data import UmChaTransData
+from data_helper import dataHelper
 """
 ref code 
 https://github.com/beyondnlp/nlp-tutorial/blob/master/4-2.Seq2Seq(Attention)/Seq2Seq(Attention)-Tensor.py
@@ -19,7 +19,7 @@ EVAL_EVERY = 100
 NUM_CHECKPOINTS = 5
 CHECKPOINT_EVERY = 1000
 
-uc_data = UmChaTransData()
+uc_data = dataHelper()
 sources_train, sources_dev, outputs_train, outputs_dev, targets_train, targets_dev = uc_data.get_suffled_data()
 ##
 train_set = np.array([(x, outputs_train[idx], targets_train[idx]) for idx, x in enumerate(sources_train)])
@@ -94,6 +94,8 @@ with tf.variable_scope('decode'), tf.name_scope('decode'):
         prediction_mask = prediction * tf.to_int64(t_mask)
         correct_pred = tf.equal(prediction_mask, targets)
         accuracy = tf.reduce_mean(tf.cast(correct_pred, "float"), name="accuracy")
+
+attention_type = 'BahdanauAttention' 
 
 ## inferance
 def false():
