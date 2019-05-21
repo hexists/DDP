@@ -32,12 +32,15 @@ class SEQ2SEQ:
         self.targets = tf.placeholder(tf.int64, [None, None], name='targets')
         print('self.targets = {}'.format(self.targets))
         self.output_keep_prob = tf.placeholder(tf.float32, name='output_keep_prob')
+        self.enc_input_length = tf.placeholder(tf.int64, [None], name='enc_input_length')
+        self.dec_input_length = tf.placeholder(tf.int64, [None], name='dec_input_length')
+        self.tgt_input_length = tf.placeholder(tf.int64, [None], name='tgt_input_length')
 
         # 인코더 셀을 구성한다.
         with tf.variable_scope('encode'):
             self.enc_cell = tf.nn.rnn_cell.BasicRNNCell(self.n_hidden)
             self.enc_cell = tf.nn.rnn_cell.DropoutWrapper(self.enc_cell, output_keep_prob=self.output_keep_prob)
-            self.enc_outputs, self.enc_states = tf.nn.dynamic_rnn(self.enc_cell, self.enc_input, dtype=tf.float32)
+            self.enc_outputs, self.enc_states = tf.nn.dynamic_rnn(self.enc_cell, self.enc_input, sequence_length = self.enc_input_length, dtype=tf.float32)
        
         # 디코더 셀을 구성한다.
         with tf.variable_scope('decode'):
@@ -47,6 +50,7 @@ class SEQ2SEQ:
             # 디코더 셀의 초기 상태값으로 넣어주는 것이 핵심.
             self.dec_outputs, self.dec_states = tf.nn.dynamic_rnn(self.dec_cell, self.dec_input,
                                                    initial_state=self.enc_states,
+                                                   sequence_length=self.dec_input_length,
                                                    dtype=tf.float32)
             # dense
             self.model = tf.layers.dense(self.dec_outputs, self.out_voc_size, activation=None, reuse=tf.AUTO_REUSE)
@@ -145,24 +149,27 @@ def batch_iter(data, data_size, batch_size, num_epochs, is_shuf=True):
 
 def pad_and_one_hot(batch, max_len, dic_len, pad_idx, only_pad=False):
     n_batches = []
+    n_lengths = []
     for bat in batch:
         bat = np.pad(bat, (0, max_len - len(bat)), 'constant')
+        n_lengths.append(len(bat))
         if only_pad is True:
             n_batches.append(bat)
         else:
             n_batches.append(np.eye(dic_len)[bat])
-    return n_batches
+    return n_batches, n_lengths
 
 
 def transliterate(word):
     transliterated = []
 
     word_ids = [inp_voc2idx[w] for w in word]
+    word_len = [len(word_ids)]
     word_one_hot = [np.eye(inp_voc_size)[word_ids]]
 
     pred_one_hot = [[np.eye(out_voc_size)[out_voc2idx[START_SYMBOL]]]]
 
-    result = sess.run(seq2seq.inference, feed_dict={seq2seq.enc_input: word_one_hot, seq2seq.inf_dec_input:pred_one_hot, seq2seq.output_keep_prob:1.0})
+    result = sess.run(seq2seq.inference, feed_dict={seq2seq.enc_input: word_one_hot, seq2seq.enc_input_length:word_len, seq2seq.inf_dec_input:pred_one_hot, seq2seq.output_keep_prob:1.0})
 
     # 결과 값인 숫자의 인덱스에 해당하는 글자를 가져와 글자 배열을 만든다.
     decoded = [out_idx2voc[i] for i in result]
@@ -223,9 +230,9 @@ with tf.Graph().as_default():
         t_losses, t_accs = [], []
         for epoch, batch in enumerate(batches):
             inp_bat, out_bat, tgt_bat = zip(*batch)
-            inp_bat_one_hot = pad_and_one_hot(inp_bat, inp_max_len, inp_voc_size, pad_idx)
-            out_bat_one_hot = pad_and_one_hot(out_bat, out_max_len, out_voc_size, pad_idx)
-            tgt_bat_pad = pad_and_one_hot(tgt_bat, tgt_max_len, out_voc_size, pad_idx, only_pad=True)
+            inp_bat_one_hot, in_lengths = pad_and_one_hot(inp_bat, inp_max_len, inp_voc_size, pad_idx)
+            out_bat_one_hot, out_lengths = pad_and_one_hot(out_bat, out_max_len, out_voc_size, pad_idx)
+            tgt_bat_pad, tgt_lengths = pad_and_one_hot(tgt_bat, tgt_max_len, out_voc_size, pad_idx, only_pad=True)
 
             # print('epoch = {}, batch = {}'.format(epoch, len(batch)))
             # print('out_bat_one_hot = {}'.format(np.shape(out_bat_one_hot)))
@@ -235,6 +242,9 @@ with tf.Graph().as_default():
             feed = {seq2seq.enc_input: inp_bat_one_hot,
                 seq2seq.dec_input: out_bat_one_hot,
                 seq2seq.targets: tgt_bat_pad,
+                seq2seq.enc_input_length: in_lengths,
+                seq2seq.dec_input_length: out_lengths,
+                seq2seq.tgt_input_length: tgt_lengths,
                 seq2seq.output_keep_prob:0.5}
 
             if DEBUG_MODE is True:
@@ -246,7 +256,6 @@ with tf.Graph().as_default():
                 results = sess.run(feed_inp, feed_dict=feed)
                 for k, v in results.items():
                     print('k = {}, v = {}'.format(k, np.shape(v)))
-                    print(v)
                 print()
             else:
                 _, train_loss, train_acc, train_summary, keep_prob = sess.run([optimizer, seq2seq.loss, seq2seq.accuracy, summary_merge, seq2seq.output_keep_prob],
@@ -269,9 +278,9 @@ with tf.Graph().as_default():
                     v_losses, v_accs = [], []
                     for v_epoch, v_batch in enumerate(v_batches):
                         inp_bat, out_bat, tgt_bat = zip(*v_batch)
-                        inp_bat_one_hot = pad_and_one_hot(inp_bat, inp_max_len, inp_voc_size, pad_idx)
-                        out_bat_one_hot = pad_and_one_hot(out_bat, out_max_len, out_voc_size, pad_idx)
-                        tgt_bat_pad = pad_and_one_hot(tgt_bat, tgt_max_len, out_voc_size, pad_idx, only_pad=True)
+                        inp_bat_one_hot, inp_bat_len = pad_and_one_hot(inp_bat, inp_max_len, inp_voc_size, pad_idx)
+                        out_bat_one_hot, out_bat_len = pad_and_one_hot(out_bat, out_max_len, out_voc_size, pad_idx)
+                        tgt_bat_pad, tgt_bat_len = pad_and_one_hot(tgt_bat, tgt_max_len, out_voc_size, pad_idx, only_pad=True)
                         # print('v_epoch = {}'.format(v_epoch))
                         # print('v_inp_bat_one_hot = {}'.format(np.shape(inp_bat_one_hot)))
                         # print('v_out_bat_one_hot = {}'.format(np.shape(out_bat_one_hot)))
@@ -280,9 +289,12 @@ with tf.Graph().as_default():
                         feed = {seq2seq.enc_input: inp_bat_one_hot,
                             seq2seq.dec_input: out_bat_one_hot,
                             seq2seq.targets: tgt_bat_pad,
+                            seq2seq.enc_input_length: inp_bat_len,
+                            seq2seq.dec_input_length: out_bat_len,
+                            seq2seq.tgt_input_length: tgt_bat_len,
                             seq2seq.output_keep_prob: 1}
 
-                        _, valid_loss, valid_acc, valid_summary, keep_prob = sess.run([optimizer, seq2seq.loss, seq2seq.accuracy, summary_merge, seq2seq.output_keep_prob],
+                        valid_loss, valid_acc, valid_summary, keep_prob = sess.run([seq2seq.loss, seq2seq.accuracy, summary_merge, seq2seq.output_keep_prob],
                                            feed_dict=feed)
                     
                         v_losses.append(valid_loss)
