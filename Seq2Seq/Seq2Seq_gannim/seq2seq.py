@@ -65,8 +65,24 @@ with tf.variable_scope('encode'):
         bw_enc_cell = tf.nn.rnn_cell.DropoutWrapper(bw_enc_cell, output_keep_prob=out_keep_prob)
         enc_outputs, enc_hidden = tf.nn.bidirectional_dynamic_rnn(fw_enc_cell, bw_enc_cell, enc_input_embeddings, x_sequence_length, dtype=tf.float32)
 
-with tf.variable_scope('decode'), tf.name_scope('decode'):
-    dec_input_embeddings = tf.nn.embedding_lookup(dec_embeddings, dec_inputs) 
+## Bahdanau Attention
+with tf.variable_scope('attention'):
+    fw_enc_hidden, bw_enc_hidden = enc_hidden
+    fw_enc_output, bw_enc_output = enc_outputs
+    query = tf.add(fw_enc_hidden.h, bw_enc_hidden.h) # bi-lstm이라서
+    value = tf.add(fw_enc_output, bw_enc_output) # bi-lstm이라서
+    # query shape ( , hidden )
+    query_exp = tf.expand_dims(query, 1) # ( , 1, hidden)
+    value_w = tf.layers.dense(value, n_hidden, activation=None, reuse=tf.AUTO_REUSE, name='value_w')
+    query_exp_w = tf.layers.dense(query_exp, n_hidden, activation=None, reuse=tf.AUTO_REUSE, name='query_exp_w')
+    activation = tf.nn.tanh(value_w + query_exp_w)
+    att_score = tf.layers.dense(activation, 1, reuse=tf.AUTO_REUSE, name='att_score')
+    #att_weights = tf.nn.softmax(att_score, axis=1) # softmax.axis is not support in tensorflow-1.4
+    att_weights = tf.nn.softmax(att_score)
+    context_vector = tf.reduce_sum(att_weights * value, axis=1)
+
+with tf.variable_scope('decode'):
+    dec_input_embeddings = tf.nn.embedding_lookup(dec_embeddings, dec_inputs) # (batch size, sequence length , hidden size)
     if cell_type == 'rnn':
         dec_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
         dec_cell = tf.nn.rnn_cell.DropoutWrapper(dec_cell, output_keep_prob=out_keep_prob)
@@ -76,26 +92,30 @@ with tf.variable_scope('decode'), tf.name_scope('decode'):
         dec_cell = tf.nn.rnn_cell.DropoutWrapper(dec_cell, output_keep_prob=out_keep_prob)
         outputs, dec_states = tf.nn.dynamic_rnn(dec_cell, dec_input_embeddings, initial_state=enc_hidden, sequence_length=y_sequence_length, dtype=tf.float32)
     elif cell_type == 'bi-lstm':
+        #dec_input_embeddings = tf.concat([tf.tile(tf.expand_dims(context_vector, 1), [1, uc_data.max_outputs_seq_length, n_hidden]), dec_input_embeddings], axis=-1)
+        dec_input_embeddings = tf.concat([tf.tile(tf.expand_dims(context_vector, 1), [1, uc_data.max_outputs_seq_length, 1]), dec_input_embeddings], axis=-1)
         fw_enc_hidden, bw_enc_hidden = enc_hidden
-        add_enc_hidden = tf.nn.rnn_cell.LSTMStateTuple(c=tf.add(fw_enc_hidden.c, bw_enc_hidden.c), h=tf.add(fw_enc_hidden.h, bw_enc_hidden.h))
-        dec_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
+        #c = tf.add(fw_enc_hidden.c, bw_enc_hidden.c)
+        c = tf.concat([fw_enc_hidden.c, bw_enc_hidden.c], 1)
+        h = tf.concat([fw_enc_hidden.h, bw_enc_hidden.h], 1)
+        add_enc_hidden = tf.nn.rnn_cell.LSTMStateTuple(c=c, h=h)
+        ##
+        dec_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden*2)
         dec_cell = tf.nn.rnn_cell.DropoutWrapper(dec_cell, output_keep_prob=out_keep_prob)
         outputs, dec_states = tf.nn.dynamic_rnn(dec_cell, dec_input_embeddings, initial_state=add_enc_hidden, sequence_length=y_sequence_length, dtype=tf.float32)
     logits = tf.layers.dense(outputs, n_class, activation=None, reuse=tf.AUTO_REUSE, name='output_layer')
     # loss
     t_mask = tf.sequence_mask(t_sequence_length, tf.shape(targets)[1])
-    with tf.name_scope("loss"):
+    with tf.variable_scope("loss"):
         losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=targets)
         losses = losses * tf.to_float(t_mask)
         loss = tf.reduce_mean(losses)
     # accuracy
-    with tf.name_scope("accuracy"):
+    with tf.variable_scope("accuracy"):
         prediction = tf.argmax(logits, 2)
         prediction_mask = prediction * tf.to_int64(t_mask)
         correct_pred = tf.equal(prediction_mask, targets)
         accuracy = tf.reduce_mean(tf.cast(correct_pred, "float"), name="accuracy")
-
-attention_type = 'BahdanauAttention' 
 
 ## inferance
 def false():
@@ -110,8 +130,9 @@ def cond(i, pred, dstate, ot, es):
     return tf.case({tf.greater_equal(i, uc_data.max_targets_seq_length): false, tf.equal(p, e): false}, default=true)
     
 def body(i, dec_before_inputs, before_state, output_tensor_t, end_symbol):
-    with tf.variable_scope('decode'), tf.name_scope('decode'):
-        inf_dec_input_embeddings = tf.nn.embedding_lookup(dec_embeddings, dec_before_inputs) 
+    with tf.variable_scope('decode'):
+        inf_dec_input_embeddings = tf.nn.embedding_lookup(dec_embeddings, dec_before_inputs) # batch, step, hidden
+        inf_dec_input_embeddings = tf.concat([tf.expand_dims(context_vector, 1), inf_dec_input_embeddings], axis=-1)
         inf_outputs, inf_dec_states = tf.nn.dynamic_rnn(dec_cell, inf_dec_input_embeddings, initial_state=before_state, dtype=tf.float32)
         logits = tf.layers.dense(inf_outputs, n_class, activation=None, reuse=tf.AUTO_REUSE, name='output_layer')
         inf_pred = tf.argmax(logits, 2)
@@ -123,8 +144,12 @@ end_symbol_idx = tf.convert_to_tensor(np.array([[2]]), dtype=tf.int64)
 output_tensor_t = tf.TensorArray(tf.int64, size = 0, dynamic_size=True) #uc_data.max_targets_seq_length)
 ##
 if cell_type == 'bi-lstm':
-    fw_enc_hidden, bw_enc_hidden = enc_hidden
-    add_enc_hidden = tf.nn.rnn_cell.LSTMStateTuple(c=tf.add(fw_enc_hidden.c, bw_enc_hidden.c), h=tf.add(fw_enc_hidden.h, bw_enc_hidden.h))
+    fw_enc_hidden, bw_enc_hidden = enc_hidden #c = tf.concat([fw_enc_hidden.c, bw_enc_hidden.c], 1)
+    #c = tf.add(fw_enc_hidden.c, bw_enc_hidden.c)
+    #h = tf.add(fw_enc_hidden.h, bw_enc_hidden.h)
+    c = tf.concat([fw_enc_hidden.c, bw_enc_hidden.c], 1)
+    h = tf.concat([fw_enc_hidden.h, bw_enc_hidden.h], 1)
+    add_enc_hidden = tf.nn.rnn_cell.LSTMStateTuple(c=c, h=h)
     _, _, _, output_tensor_t, _ = tf.while_loop(
         cond=cond,
         body=body,
@@ -274,8 +299,8 @@ def train():
                     avg_dev_acc += results.get('accuracy')
                     if dev_ep == 0:
                         input_word = get_umchar_str(x_bat[0])
-                        print 'inferance {} -> {}'.format(input_word, transiteration(sess, input_word))
-                        print 'devset    {} -> {}'.format(input_word, get_umchar_str(results.get('prediction')[0]))
+                        print('inferance {} -> {}'.format(input_word, transiteration(sess, input_word)))
+                        print('devset    {} -> {}'.format(input_word, get_umchar_str(results.get('prediction')[0])))
                 blen = dev_ep+1
                 dev_summary_writer.add_summary(results.get('dev_summary_op'), cur_step)
                 print("\nEvaluation : dev loss = %.6f / dev acc = %.6f" %(avg_dev_loss/blen, avg_dev_acc/blen))
@@ -286,7 +311,7 @@ def train():
         print("final inferance")
         input_word = 'apple'
         translated = transiteration(sess, input_word)
-        print '{} -> {}'.format(input_word, translated)
+        print('{} -> {}'.format(input_word, translated))
     
 def transiteration(sess, input_word):
     x_bat = uc_data.get_input_idxs(input_word) # [[44 45 42]] 
