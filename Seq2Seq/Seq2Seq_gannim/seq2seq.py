@@ -47,7 +47,7 @@ t_sequence_length = tf.placeholder(tf.int64, name="t_sequence_length") # batch s
 enc_embeddings = tf.Variable(tf.random_normal([uc_data.tot_dic_len, n_hidden]))
 dec_embeddings = tf.Variable(tf.random_normal([uc_data.tot_dic_len, n_hidden]))
 
-cell_type = 'bi-lstm'
+cell_type = 'rnn'#'bi-lstm'
 with tf.variable_scope('encode'):
     enc_input_embeddings = tf.nn.embedding_lookup(enc_embeddings, enc_inputs) 
     if cell_type == 'rnn':
@@ -67,10 +67,17 @@ with tf.variable_scope('encode'):
 
 ## Bahdanau Attention
 with tf.variable_scope('attention'):
-    fw_enc_hidden, bw_enc_hidden = enc_hidden
-    fw_enc_output, bw_enc_output = enc_outputs
-    query = tf.add(fw_enc_hidden.h, bw_enc_hidden.h) # bi-lstm이라서
-    value = tf.add(fw_enc_output, bw_enc_output) # bi-lstm이라서
+    if cell_type == 'rnn':
+        query = enc_hidden
+        value = enc_outputs
+    elif cell_type == 'lstm':
+        query = enc_hidden.h
+        value = enc_outputs
+    elif cell_type == 'bi-lstm':
+        fw_enc_hidden, bw_enc_hidden = enc_hidden
+        fw_enc_output, bw_enc_output = enc_outputs
+        query = tf.add(fw_enc_hidden.h, bw_enc_hidden.h)
+        value = tf.add(fw_enc_output, bw_enc_output)
     # query shape ( , hidden )
     query_exp = tf.expand_dims(query, 1) # ( , 1, hidden)
     value_w = tf.layers.dense(value, n_hidden, activation=None, reuse=tf.AUTO_REUSE, name='value_w')
@@ -84,6 +91,7 @@ with tf.variable_scope('attention'):
 with tf.variable_scope('decode'):
     dec_input_embeddings = tf.nn.embedding_lookup(dec_embeddings, dec_inputs) # (batch size, sequence length , hidden size)
     if cell_type == 'rnn':
+        dec_input_embeddings = tf.concat([tf.tile(tf.expand_dims(context_vector, 1), [1, uc_data.max_outputs_seq_length, 1]), dec_input_embeddings], axis=-1)
         dec_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
         dec_cell = tf.nn.rnn_cell.DropoutWrapper(dec_cell, output_keep_prob=out_keep_prob)
         outputs, dec_states = tf.nn.dynamic_rnn(dec_cell, dec_input_embeddings, initial_state=enc_hidden, sequence_length=y_sequence_length, dtype=tf.float32)
@@ -142,11 +150,9 @@ def body(i, dec_before_inputs, before_state, output_tensor_t, end_symbol):
 inf_dec_inputs = tf.placeholder(tf.int64, [None, None]) # (batch, step)
 end_symbol_idx = tf.convert_to_tensor(np.array([[2]]), dtype=tf.int64)
 output_tensor_t = tf.TensorArray(tf.int64, size = 0, dynamic_size=True) #uc_data.max_targets_seq_length)
-##
+
 if cell_type == 'bi-lstm':
-    fw_enc_hidden, bw_enc_hidden = enc_hidden #c = tf.concat([fw_enc_hidden.c, bw_enc_hidden.c], 1)
-    #c = tf.add(fw_enc_hidden.c, bw_enc_hidden.c)
-    #h = tf.add(fw_enc_hidden.h, bw_enc_hidden.h)
+    fw_enc_hidden, bw_enc_hidden = enc_hidden
     c = tf.concat([fw_enc_hidden.c, bw_enc_hidden.c], 1)
     h = tf.concat([fw_enc_hidden.h, bw_enc_hidden.h], 1)
     add_enc_hidden = tf.nn.rnn_cell.LSTMStateTuple(c=c, h=h)

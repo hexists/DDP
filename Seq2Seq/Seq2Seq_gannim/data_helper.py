@@ -24,7 +24,7 @@ class dataHelper(object):
     @staticmethod
     def cut_utf8(str_input):
         str_input = unicode(str_input) #if type(str_input) is str else str_inputs
-        chars = list(str_input)
+        chars = list(str_input.lower())
         chars = [char.encode('utf-8') for char in chars]
         return chars
     
@@ -41,20 +41,13 @@ class dataHelper(object):
             
     def save_vocab(self, path):
         with open('{}'.format(path), 'w') as ff:
-            ff.write("tot_datas\n")
-            for source, target in self.tot_datas:
-                ff.write("{}\t{}\n".format(source, target))
             ff.write("tot_dic_len\n")
-
+            ff.write("{}\n", self.tot_dic_len)
+            ff.write("tot_word_idx_dic\n")
+            for key in self.tot_word_idx_dic:
+                ff.write("{}\t{}\n".format(key, self.tot_word_idx_dic[key]))
             ff.write("\n")
-        ## idx to word
-        self.tot_dic_len = len(self.tot_word_idx_dic)
-        self.tot_idx_word_dic = self.get_idx_word_dic(self.tot_word_idx_dic)
-        ## convert to array
-        self.input_inputs = self.convert_word_to_idx(self.inputs, self.tot_word_idx_dic)
-        self.input_outputs = self.convert_word_to_idx(self.outputs, self.tot_word_idx_dic)
-        self.input_targets = self.convert_word_to_idx(self.targets, self.tot_word_idx_dic)
-        
+
     def get_word_dic(self, tot_datas):
         inputs = []
         outputs = []
