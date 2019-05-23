@@ -23,30 +23,28 @@ class SEQ2SEQ:
         self.n_hidden = n_hidden
         self.embedding_size = 128
 
-        if embedding is True:
+        with tf.variable_scope('input'):
+            if embedding is True:
+                # [batch size, time steps]
+                self.enc_input = tf.placeholder(tf.int32, [None, None], name='enc_input')
+                self.dec_input = tf.placeholder(tf.int32, [None, None], name='dec_input')
+                self.inf_dec_input = tf.placeholder(tf.int32, [None, None], name='inf_dec_input')
+                self.enc_embedding = tf.Variable(tf.random_normal([self.inp_voc_size, self.embedding_size]), name='enc_embedding')
+                self.dec_embedding = tf.Variable(tf.random_normal([self.out_voc_size, self.embedding_size]), name='dec_embedding')
+                self.inf_dec_embedding = tf.Variable(tf.random_normal([self.out_voc_size, self.embedding_size]), name='inf_dec_embedding')
+            else:
+                # [batch size, time steps, input size]
+                self.enc_input = tf.placeholder(tf.float32, [None, None, inp_voc_size], name='enc_input')
+                self.dec_input = tf.placeholder(tf.float32, [None, None, out_voc_size], name='dec_input')
+                self.inf_dec_input = tf.placeholder(tf.float32, [None, None, out_voc_size], name='inf_dec_input')
+
+            self.enc_input_len = tf.placeholder(tf.int64, [None], name='enc_input_len')
+            self.dec_input_len = tf.placeholder(tf.int64, [None], name='dec_input_len')
+            self.tgt_input_len = tf.placeholder(tf.int64, [None], name='tgt_input_len')
+
             # [batch size, time steps]
-            self.enc_input = tf.placeholder(tf.int32, [None, None], name='enc_input')
-            self.dec_input = tf.placeholder(tf.int32, [None, None], name='dec_input')
-            self.inf_dec_input = tf.placeholder(tf.int32, [None, None], name='inf_dec_input')
-
-            self.enc_embedding = tf.Variable(tf.random_normal([self.inp_voc_size, self.embedding_size]), name='enc_embedding')
-            self.dec_embedding = tf.Variable(tf.random_normal([self.out_voc_size, self.embedding_size]), name='dec_embedding')
-            self.inf_dec_embedding = tf.Variable(tf.random_normal([self.out_voc_size, self.embedding_size]), name='inf_dec_embedding')
-        else:
-            # [batch size, time steps, input size]
-            self.enc_input = tf.placeholder(tf.float32, [None, None, inp_voc_size], name='enc_input')
-            print('self.enc_input = {}'.format(self.enc_input))
-            self.dec_input = tf.placeholder(tf.float32, [None, None, out_voc_size], name='dec_input')
-            print('self.dec_input = {}'.format(self.dec_input))
-            self.inf_dec_input = tf.placeholder(tf.float32, [None, None, out_voc_size], name='inf_dec_input')
-
-        self.enc_input_len = tf.placeholder(tf.int64, [None], name='enc_input_len')
-        self.dec_input_len = tf.placeholder(tf.int64, [None], name='dec_input_len')
-        self.tgt_input_len = tf.placeholder(tf.int64, [None], name='tgt_input_len')
-
-        # [batch size, time steps]
-        self.targets = tf.placeholder(tf.int64, [None, None], name='targets')
-        self.output_keep_prob = tf.placeholder(tf.float32, name='output_keep_prob')
+            self.targets = tf.placeholder(tf.int64, [None, None], name='targets')
+            self.output_keep_prob = tf.placeholder(tf.float32, name='output_keep_prob')
 
         # 인코더 셀을 구성한다.
         with tf.variable_scope('encode'):
