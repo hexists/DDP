@@ -99,42 +99,40 @@ class SEQ2SEQ(object):
             
         ## inferance decoder
         self.inf_dec_inputs = tf.placeholder(tf.int64, [None, None], name='inf_dec_inputs') # (batch, step)
-        with tf.variable_scope('inferance'):
-            def false():
-                return False
-            def true():
-                return True
-            def cond(i, pred, dstate, ot, es):
-                # end symbol index = 2
-                p = tf.reshape(pred, [])
-                e = tf.reshape(es, [])
-                return tf.case({tf.greater_equal(i, uc_data.max_targets_seq_length): false, tf.equal(p, e): false}, default=true)
-                
-            def body(i, dec_before_inputs, before_state, output_tensor_t, end_symbol):
-                with tf.variable_scope('decode'):
-                    inf_dec_input_embeddings = tf.nn.embedding_lookup(self.dec_embeddings, dec_before_inputs) # batch, step, hidden
-                    inf_dec_input_embeddings = tf.concat([tf.expand_dims(self.context_vector, 1), inf_dec_input_embeddings], axis=-1)
-                    inf_outputs, inf_dec_states = tf.nn.dynamic_rnn(self.dec_cell, inf_dec_input_embeddings, initial_state=before_state, dtype=tf.float32)
-                    logits = tf.layers.dense(inf_outputs, n_class, activation=None, reuse=tf.AUTO_REUSE, name='output_layer')
-                    inf_pred = tf.argmax(logits, 2)
-                    output_tensor_t = output_tensor_t.write( i, inf_pred )
-                return i+1, inf_pred, inf_dec_states, output_tensor_t, end_symbol
-            ##  run inferance
-            self.end_symbol_idx = tf.convert_to_tensor(np.array([[2]]), dtype=tf.int64)
-            self.output_tensor_t = tf.TensorArray(tf.int64, size = 0, dynamic_size=True) #uc_data.max_targets_seq_length)
-            if cell_type == 'bi-lstm':
-                self.fw_enc_hidden, self.bw_enc_hidden = self.enc_hidden
-                c = tf.concat([self.fw_enc_hidden.c, self.bw_enc_hidden.c], 1)
-                h = tf.concat([self.fw_enc_hidden.h, self.bw_enc_hidden.h], 1)
-                self.add_enc_hidden = tf.nn.rnn_cell.LSTMStateTuple(c=c, h=h)
-                _, _, _, self.output_tensor_t, _ = tf.while_loop(
-                    cond=cond,
-                    body=body,
-                    loop_vars=[tf.constant(0), self.inf_dec_inputs, self.add_enc_hidden, self.output_tensor_t, self.end_symbol_idx])
-            else:
-                _, _, _, self.output_tensor_t, _ = tf.while_loop(
-                    cond=cond,
-                    body=body,
-                    loop_vars=[tf.constant(0), self.inf_dec_inputs, self.enc_hidden, self.output_tensor_t, self.end_symbol_idx])
-            self.inf_result = self.output_tensor_t.stack()
-            self.inf_result = tf.reshape( self.inf_result, [-1] , name='inf_result') 
+        def false():
+            return False
+        def true():
+            return True
+        def cond(i, pred, dstate, ot, es):
+            # end symbol index = 2
+            p = tf.reshape(pred, [])
+            e = tf.reshape(es, [])
+            return tf.case({tf.greater_equal(i, uc_data.max_targets_seq_length): false, tf.equal(p, e): false}, default=true)
+        def body(i, dec_before_inputs, before_state, output_tensor_t, end_symbol):
+            with tf.variable_scope('decode'):
+                inf_dec_input_embeddings = tf.nn.embedding_lookup(self.dec_embeddings, dec_before_inputs) # batch, step, hidden
+                inf_dec_input_embeddings = tf.concat([tf.expand_dims(self.context_vector, 1), inf_dec_input_embeddings], axis=-1)
+                inf_outputs, inf_dec_states = tf.nn.dynamic_rnn(self.dec_cell, inf_dec_input_embeddings, initial_state=before_state, dtype=tf.float32)
+                logits = tf.layers.dense(inf_outputs, n_class, activation=None, reuse=tf.AUTO_REUSE, name='output_layer')
+                inf_pred = tf.argmax(logits, 2)
+                output_tensor_t = output_tensor_t.write( i, inf_pred )
+            return i+1, inf_pred, inf_dec_states, output_tensor_t, end_symbol
+        ##  run inferance
+        self.end_symbol_idx = tf.convert_to_tensor(np.array([[2]]), dtype=tf.int64)
+        self.output_tensor_t = tf.TensorArray(tf.int64, size = 0, dynamic_size=True) #uc_data.max_targets_seq_length)
+        if cell_type == 'bi-lstm':
+            self.fw_enc_hidden, self.bw_enc_hidden = self.enc_hidden
+            c = tf.concat([self.fw_enc_hidden.c, self.bw_enc_hidden.c], 1)
+            h = tf.concat([self.fw_enc_hidden.h, self.bw_enc_hidden.h], 1)
+            self.add_enc_hidden = tf.nn.rnn_cell.LSTMStateTuple(c=c, h=h)
+            _, _, _, self.output_tensor_t, _ = tf.while_loop(
+                cond=cond,
+                body=body,
+                loop_vars=[tf.constant(0), self.inf_dec_inputs, self.add_enc_hidden, self.output_tensor_t, self.end_symbol_idx])
+        else:
+            _, _, _, self.output_tensor_t, _ = tf.while_loop(
+                cond=cond,
+                body=body,
+                loop_vars=[tf.constant(0), self.inf_dec_inputs, self.enc_hidden, self.output_tensor_t, self.end_symbol_idx])
+        self.inf_result = self.output_tensor_t.stack()
+        self.inf_result = tf.reshape( self.inf_result, [-1] , name='inf_result') 
