@@ -50,7 +50,7 @@ class SEQ2SEQ:
 
         # 인코더 셀을 구성한다.
         with tf.variable_scope('encode'):
-            self.enc_cell = tf.nn.rnn_cell.BasicRNNCell(self.n_hidden)
+            self.enc_cell = tf.nn.rnn_cell.LSTMCell(self.n_hidden)
             self.enc_cell = tf.nn.rnn_cell.DropoutWrapper(self.enc_cell, output_keep_prob=self.output_keep_prob)
             if embedding is True:
                 self.enc_input_embedding = tf.nn.embedding_lookup(params=self.enc_embedding, ids=self.enc_input, name='enc_input_embedding')
@@ -60,7 +60,7 @@ class SEQ2SEQ:
        
         # 디코더 셀을 구성한다.
         with tf.variable_scope('decode'):
-            self.dec_cell = tf.nn.rnn_cell.BasicRNNCell(self.n_hidden)
+            self.dec_cell = tf.nn.rnn_cell.LSTMCell(self.n_hidden)
             self.dec_cell = tf.nn.rnn_cell.DropoutWrapper(self.dec_cell, output_keep_prob=self.output_keep_prob)
             # Seq2Seq 모델은 인코더 셀의 최종 상태값을
             # 디코더 셀의 초기 상태값으로 넣어주는 것이 핵심.
@@ -95,8 +95,7 @@ class SEQ2SEQ:
             def ret_false():
                 return False
             def is_less():
-                print('inp_pred_output = {}'.format(np.shape(inp_pred_output)))
-                print('output_tensor_t = {}'.format(np.shape(output_tensor_t)))
+                return tf.cond(tf.less(i, self.out_max_len), ret_true, ret_false)
 
             if embedding is True:
                 return tf.cond(tf.reshape(tf.equal(self.dec_end_idx, inp_pred_output), []), ret_false, is_less)
@@ -232,8 +231,7 @@ def transliterate(word, embedding=False):
 ######
 learning_rate = 0.01
 n_hidden = 128
-# total_epoch = 100
-total_epoch = 1
+total_epoch = 100
 batch_size = 64
 
 
