@@ -97,16 +97,13 @@ class SEQ2SEQ(object):
                 self.correct_pred = tf.equal(self.prediction_mask, self.targets)
                 self.accuracy = tf.reduce_mean(tf.cast(self.correct_pred, "float"), name="accuracy")
             
+        ## inferance decoder
         self.inf_dec_inputs = tf.placeholder(tf.int64, [None, None], name='inf_dec_inputs') # (batch, step)
-        self.end_symbol_idx = tf.convert_to_tensor(np.array([[2]]), dtype=tf.int64)
-        self.output_tensor_t = tf.TensorArray(tf.int64, size = 0, dynamic_size=True) #uc_data.max_targets_seq_length)
-
         with tf.variable_scope('inferance'):
             def false():
                 return False
             def true():
                 return True
-
             def cond(i, pred, dstate, ot, es):
                 # end symbol index = 2
                 p = tf.reshape(pred, [])
@@ -123,6 +120,8 @@ class SEQ2SEQ(object):
                     output_tensor_t = output_tensor_t.write( i, inf_pred )
                 return i+1, inf_pred, inf_dec_states, output_tensor_t, end_symbol
             ##  run inferance
+            self.end_symbol_idx = tf.convert_to_tensor(np.array([[2]]), dtype=tf.int64)
+            self.output_tensor_t = tf.TensorArray(tf.int64, size = 0, dynamic_size=True) #uc_data.max_targets_seq_length)
             if cell_type == 'bi-lstm':
                 self.fw_enc_hidden, self.bw_enc_hidden = self.enc_hidden
                 c = tf.concat([self.fw_enc_hidden.c, self.bw_enc_hidden.c], 1)

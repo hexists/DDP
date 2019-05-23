@@ -30,14 +30,20 @@ sources_train, sources_dev, outputs_train, outputs_dev, targets_train, targets_d
 train_set = np.array([(x, outputs_train[idx], targets_train[idx]) for idx, x in enumerate(sources_train)])
 dev_set = np.array([(x, outputs_dev[idx], targets_dev[idx]) for idx, x in enumerate(sources_dev)])
 
-
-
 def get_umchar_str(result):
     decoded_str = ''.join([uc_data.tot_idx_word_dic[n] for n in result])
     if uc_data.END_SYMBOL in decoded_str:
         translated = ''.join(decoded_str[:decoded_str.index(uc_data.END_SYMBOL)])
     else:
         translated = decoded_str
+    return translated
+    
+def transiteration(sess, input_word):
+    x_bat = uc_data.get_input_idxs(input_word) # [[44 45 42]] 
+    x_len = np.array([len(x_bat[0])]) # [[3]]
+    y_bat = uc_data.get_input_idxs(uc_data.START_SYMBOL) #[[1]] 
+    result = sess.run(seq2seq.inf_result, feed_dict={seq2seq.enc_inputs:x_bat, seq2seq.inf_dec_inputs:y_bat, seq2seq.x_sequence_length:x_len, seq2seq.out_keep_prob:1.0})
+    translated = get_umchar_str(result)
     return translated
 
 def get_tfconfig():
@@ -183,12 +189,4 @@ def train():
         input_word = 'apple'
         translated = transiteration(sess, input_word)
         print('{} -> {}'.format(input_word, translated))
-    
-def transiteration(sess, input_word):
-    x_bat = uc_data.get_input_idxs(input_word) # [[44 45 42]] 
-    x_len = np.array([len(x_bat[0])]) # [[3]]
-    y_bat = uc_data.get_input_idxs(uc_data.START_SYMBOL) #[[1]] 
-    result = sess.run(seq2seq.inf_result, feed_dict={seq2seq.enc_inputs:x_bat, seq2seq.inf_dec_inputs:y_bat, seq2seq.x_sequence_length:x_len, seq2seq.out_keep_prob:1.0})
-    translated = get_umchar_str(result)
-    return translated
 train()
