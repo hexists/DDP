@@ -40,9 +40,10 @@ class dataHelper(object):
         return {word_idx_dic[key]:key for key in word_idx_dic.keys()}
             
     def save_vocab(self, path):
+        ## tf.recode . pikle
         with open('{}'.format(path), 'w') as ff:
             ff.write("tot_dic_len\n")
-            ff.write("{}\n", self.tot_dic_len)
+            ff.write("{}\n".format(self.tot_dic_len))
             ff.write("tot_word_idx_dic\n")
             for key in self.tot_word_idx_dic:
                 ff.write("{}\t{}\n".format(key, self.tot_word_idx_dic[key]))
