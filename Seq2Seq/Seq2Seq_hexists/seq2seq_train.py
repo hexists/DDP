@@ -29,9 +29,24 @@ class SEQ2SEQ:
                 self.enc_input = tf.placeholder(tf.int32, [None, None], name='enc_input')
                 self.dec_input = tf.placeholder(tf.int32, [None, None], name='dec_input')
                 self.inf_dec_input = tf.placeholder(tf.int32, [None, None], name='inf_dec_input')
-                self.enc_embedding = tf.Variable(tf.random_normal([self.inp_voc_size, self.embedding_size]), name='enc_embedding')
-                self.dec_embedding = tf.Variable(tf.random_normal([self.out_voc_size, self.embedding_size]), name='dec_embedding')
-                self.inf_dec_embedding = tf.Variable(tf.random_normal([self.out_voc_size, self.embedding_size]), name='inf_dec_embedding')
+                self.enc_initializer = tf.contrib.layers.xavier_initializer()
+                self.enc_embedding = tf.get_variable(name='enc_embedding',
+                                                    shape=[self.inp_voc_size, self.embedding_size],
+                                                    dtype=tf.float32,
+                                                    initializer=self.enc_initializer,
+                                                    trainable=True)
+                self.dec_initializer = tf.contrib.layers.xavier_initializer()
+                self.dec_embedding = tf.get_variable(name='dec_embedding',
+                                                    shape=[self.out_voc_size, self.embedding_size],
+                                                    dtype=tf.float32,
+                                                    initializer=self.dec_initializer,
+                                                    trainable=True)
+                self.inf_dec_initializer = tf.contrib.layers.xavier_initializer()
+                self.inf_dec_embedding = tf.get_variable(name='inf_dec_embedding',
+                                                    shape=[self.out_voc_size, self.embedding_size],
+                                                    dtype=tf.float32,
+                                                    initializer=self.inf_dec_initializer,
+                                                    trainable=True)
             else:
                 # [batch size, time steps, input size]
                 self.enc_input = tf.placeholder(tf.float32, [None, None, inp_voc_size], name='enc_input')
