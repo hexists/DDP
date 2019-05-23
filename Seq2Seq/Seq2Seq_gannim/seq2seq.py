@@ -97,7 +97,7 @@ class SEQ2SEQ(object):
                 self.correct_pred = tf.equal(self.prediction_mask, self.targets)
                 self.accuracy = tf.reduce_mean(tf.cast(self.correct_pred, "float"), name="accuracy")
             
-        self.inf_dec_inputs = tf.placeholder(tf.int64, [None, None]) # (batch, step)
+        self.inf_dec_inputs = tf.placeholder(tf.int64, [None, None], name='inf_dec_inputs') # (batch, step)
         self.end_symbol_idx = tf.convert_to_tensor(np.array([[2]]), dtype=tf.int64)
         self.output_tensor_t = tf.TensorArray(tf.int64, size = 0, dynamic_size=True) #uc_data.max_targets_seq_length)
 
@@ -122,20 +122,20 @@ class SEQ2SEQ(object):
                     inf_pred = tf.argmax(logits, 2)
                     output_tensor_t = output_tensor_t.write( i, inf_pred )
                 return i+1, inf_pred, inf_dec_states, output_tensor_t, end_symbol
-        ##  run inferance
-        if cell_type == 'bi-lstm':
-            self.fw_enc_hidden, self.bw_enc_hidden = self.enc_hidden
-            c = tf.concat([self.fw_enc_hidden.c, self.bw_enc_hidden.c], 1)
-            h = tf.concat([self.fw_enc_hidden.h, self.bw_enc_hidden.h], 1)
-            self.add_enc_hidden = tf.nn.rnn_cell.LSTMStateTuple(c=c, h=h)
-            _, _, _, self.output_tensor_t, _ = tf.while_loop(
-                cond=cond,
-                body=body,
-                loop_vars=[tf.constant(0), self.inf_dec_inputs, self.add_enc_hidden, self.output_tensor_t, self.end_symbol_idx])
-        else:
-            _, _, _, self.output_tensor_t, _ = tf.while_loop(
-                cond=cond,
-                body=body,
-                loop_vars=[tf.constant(0), self.inf_dec_inputs, self.enc_hidden, self.output_tensor_t, self.end_symbol_idx])
-        self.inf_result = self.output_tensor_t.stack()
-        self.inf_result = tf.reshape( self.inf_result, [-1] ) 
+            ##  run inferance
+            if cell_type == 'bi-lstm':
+                self.fw_enc_hidden, self.bw_enc_hidden = self.enc_hidden
+                c = tf.concat([self.fw_enc_hidden.c, self.bw_enc_hidden.c], 1)
+                h = tf.concat([self.fw_enc_hidden.h, self.bw_enc_hidden.h], 1)
+                self.add_enc_hidden = tf.nn.rnn_cell.LSTMStateTuple(c=c, h=h)
+                _, _, _, self.output_tensor_t, _ = tf.while_loop(
+                    cond=cond,
+                    body=body,
+                    loop_vars=[tf.constant(0), self.inf_dec_inputs, self.add_enc_hidden, self.output_tensor_t, self.end_symbol_idx])
+            else:
+                _, _, _, self.output_tensor_t, _ = tf.while_loop(
+                    cond=cond,
+                    body=body,
+                    loop_vars=[tf.constant(0), self.inf_dec_inputs, self.enc_hidden, self.output_tensor_t, self.end_symbol_idx])
+            self.inf_result = self.output_tensor_t.stack()
+            self.inf_result = tf.reshape( self.inf_result, [-1] , name='inf_result') 
