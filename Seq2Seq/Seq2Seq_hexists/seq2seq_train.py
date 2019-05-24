@@ -91,14 +91,24 @@ class SEQ2SEQ:
             # dense
             self.model = tf.layers.dense(self.dec_outputs, self.out_voc_size, activation=None, reuse=tf.AUTO_REUSE)
 
-        # Loss
-        self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.model, labels=self.targets))
-        tf.summary.scalar('loss', self.loss)
+
+        with tf.variable_scope('loss_accuracy'):
+            # Loss
+            # 1) sequence_mask => T, F
+            # 2) boolean_mask = sequence_mask * result
+
+            self.seq_mask = tf.sequence_mask(self.tgt_input_len, maxlen=self.out_max_len)
+
+            self.losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.model, labels=self.targets)
+            self.masked_losses = tf.boolean_mask(self.losses, self.seq_mask)
+            self.loss = tf.reduce_mean(self.masked_losses, name='loss')
+            tf.summary.scalar('loss', self.loss)
              
-        # Accuracy
-        self.correct_predictions = tf.equal(tf.argmax(self.model, 2), self.targets)
-        self.accuracy = tf.reduce_mean(tf.cast(self.correct_predictions, "float"), name="accuracy")
-        tf.summary.scalar('accuracy', self.accuracy)
+            # Accuracy
+            self.correct_predictions = tf.equal(tf.argmax(self.model, 2), self.targets)
+            self.masked_correct_predictions = tf.boolean_mask(self.correct_predictions, self.seq_mask)
+            self.accuracy = tf.reduce_mean(tf.cast(self.masked_correct_predictions, "float"), name="accuracy")
+            tf.summary.scalar('accuracy', self.accuracy)
 
         self.dec_end_idx = tf.constant([[dec_end_idx]], tf.int32)
 
@@ -188,6 +198,7 @@ def batch_iter(data, data_size, batch_size, num_epochs, is_shuf=True):
     num_epochs * (data_size / batch_size) 만큼 generator 반환
     '''
     num_batches_per_epoch = int((data_size - 1) / batch_size) + 1
+    print('num_batches_per_epoch => {}'.format(num_batches_per_epoch))
     for epoch in range(num_epochs):
         if is_shuf is True:
             shuffle_indices = np.random.permutation(np.arange(data_size))
@@ -242,7 +253,7 @@ def transliterate(word, embedding=False):
 #########
 # 옵션 설정
 ######
-learning_rate = 0.01
+learning_rate = 0.001
 n_hidden = 128
 total_epoch = 100
 batch_size = 64
@@ -316,13 +327,20 @@ with tf.Graph().as_default():
                     'out_bat': seq2seq.dec_input,
                     'tgt_bat': seq2seq.targets,
                     'model': seq2seq.model,
+                    'seq_mask': seq2seq.seq_mask,
+                    'losses': seq2seq.losses,
+                    'masked_losses': seq2seq.masked_losses,
                     'loss': seq2seq.loss,
+                    'correct_predictions': seq2seq.correct_predictions,
+                    'masked_correct_predictions': seq2seq.masked_correct_predictions,
+                    'accuracy': seq2seq.accuracy
                 }
                 results = sess.run(feed_inp, feed_dict=feed)
                 for k, v in results.items():
-                    print('k = {}, v = {}'.format(k, np.shape(v)))
-                    # print(v)
+                    print('{}: {}'.format(k, np.shape(v)))
+                    print(v)
                 print()
+                break
             else:
                 _, train_loss, train_acc, train_summary, keep_prob = sess.run([optimizer, seq2seq.loss, seq2seq.accuracy, summary_merge, seq2seq.output_keep_prob],
                                    feed_dict=feed)
@@ -350,7 +368,7 @@ with tf.Graph().as_default():
                         else:
                             inp_bat_one_hot, inp_bat_len = pad_and_one_hot(inp_bat, inp_max_len, inp_voc_size, pad_idx)
                             out_bat_one_hot, out_bat_len = pad_and_one_hot(out_bat, out_max_len, out_voc_size, pad_idx)
-                        tgt_bat_pad, out_bat_len = pad_and_one_hot(tgt_bat, tgt_max_len, out_voc_size, pad_idx, only_pad=True)
+                        tgt_bat_pad, tgt_bat_len = pad_and_one_hot(tgt_bat, tgt_max_len, out_voc_size, pad_idx, only_pad=True)
                         # print('v_epoch = {}'.format(v_epoch))
                         # print('v_inp_bat_one_hot = {}'.format(np.shape(inp_bat_one_hot)))
                         # print('v_out_bat_one_hot = {}'.format(np.shape(out_bat_one_hot)))
@@ -374,6 +392,7 @@ with tf.Graph().as_default():
                     valid_avg_acc = np.mean(v_accs)
                     v_losses, v_accs = [], []
                     valid_summary_writer.add_summary(valid_summary, epoch)
+
                     print('Valid_Epoch:', '%04d' % (epoch + 1),
                           'loss =', '{:.6f}'.format(valid_avg_loss),
                           'acc =', '{:.6f}'.format(valid_avg_acc))
