@@ -24,7 +24,7 @@ n_class = len(uc_data.tot_word_idx_dic)
 ##
 learning_rate = 0.001
 keep_prob = 0.5
-seq2seq = SEQ2SEQ(uc_data, cell_type, n_hidden, n_class)
+seq2seq = SEQ2SEQ(uc_data, cell_type, n_hidden, n_class, True)
 sources_train, sources_dev, outputs_train, outputs_dev, targets_train, targets_dev = uc_data.get_suffled_data()
 
 train_set = np.array([(x, outputs_train[idx], targets_train[idx]) for idx, x in enumerate(sources_train)])
