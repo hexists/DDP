@@ -2,11 +2,22 @@ import tensorflow as tf
 import numpy as np
 
 class SEQ2SEQ(object):
+    @staticmethod
+    def get_rnn_cell(cell_type, n_hidden):
+        if cell_type == 'rnn':
+            return tf.nn.rnn_cell.BasicRNNCell(n_hidden)
+        elif cell_type == 'gru':
+            return tf.nn.rnn_cell.GRUCell(n_hidden)
+        elif cell_type == 'lstm':
+            return tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
+        elif cell_type == 'bi-lstm':
+            return tf.nn.rnn_cell.BasicLSTMCell(n_hidden), tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
+        return None, None 
     # uc_data : dataHelper object
     # cell_type : rnn cell type , {rnn, gru, lstm, bi-lstm}
     # n_hidden : hidden size
     # n_class : output type lenght
-    def __init__(self, uc_data, cell_type, n_hidden, n_class):
+    def __init__(self, uc_data, cell_type, n_hidden, n_class, attention=False):
         ## input params
         self.enc_inputs = tf.placeholder(tf.int64, [None, None], name='enc_inputs') # (batch, step)
         self.dec_inputs = tf.placeholder(tf.int64, [None, None], name='dec_inputs') # (batch, step)
@@ -19,19 +30,12 @@ class SEQ2SEQ(object):
         ## encoder
         with tf.variable_scope('encode'):
             self.enc_input_embeddings = tf.nn.embedding_lookup(self.enc_embeddings, self.enc_inputs) 
-            ## rnn
             if cell_type in ['rnn', 'gru', 'lstm']:
-                if cell_type == 'rnn':
-                    self.enc_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
-                elif cell_type == 'gru':
-                    self.enc_cell = tf.nn.rnn_cell.GRUCell(n_hidden)
-                elif cell_type == 'lstm':
-                    self.enc_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
+                self.enc_cell = self.get_rnn_cell(cell_type, n_hidden)
                 self.enc_cell = tf.nn.rnn_cell.DropoutWrapper(self.enc_cell, output_keep_prob=self.out_keep_prob)
                 self.enc_outputs, self.enc_hidden = tf.nn.dynamic_rnn(self.enc_cell, self.enc_input_embeddings, sequence_length=self.x_sequence_length, dtype=tf.float32)
             elif cell_type == 'bi-lstm':
-                self.fw_enc_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
-                self.bw_enc_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
+                self.fw_enc_cell, self.bw_enc_cell = self.get_rnn_cell(cell_type, n_hidden)
                 self.fw_enc_cell = tf.nn.rnn_cell.DropoutWrapper(self.fw_enc_cell, output_keep_prob=self.out_keep_prob)
                 self.bw_enc_cell = tf.nn.rnn_cell.DropoutWrapper(self.bw_enc_cell, output_keep_prob=self.out_keep_prob)
                 self.enc_outputs, self.enc_hidden = tf.nn.bidirectional_dynamic_rnn(self.fw_enc_cell, self.bw_enc_cell, self.enc_input_embeddings, self.x_sequence_length, dtype=tf.float32)
@@ -66,14 +70,12 @@ class SEQ2SEQ(object):
             self.dec_input_embeddings = tf.concat([tf.tile(tf.expand_dims(self.context_vector, 1), [1, uc_data.max_outputs_seq_length, 1]), self.dec_input_embeddings], axis=-1)
             ##
             if cell_type in ['rnn', 'gru', 'lstm']:
-                if cell_type == 'rnn':
-                    self.dec_cell = tf.nn.rnn_cell.BasicRNNCell(n_hidden)
-                elif cell_type == 'gru':
-                    self.dec_cell = tf.nn.rnn_cell.GRUCell(n_hidden)
-                elif cell_type == 'lstm':
-                    self.dec_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden)
+                self.dec_cell = self.get_rnn_cell(cell_type, n_hidden)
                 self.dec_cell = tf.nn.rnn_cell.DropoutWrapper(self.dec_cell, output_keep_prob=self.out_keep_prob)
-                self.outputs, self.dec_states = tf.nn.dynamic_rnn(self.dec_cell, self.dec_input_embeddings, initial_state=self.enc_hidden, sequence_length=self.y_sequence_length, dtype=tf.float32)
+                if attention is True:
+                    ##
+                else:
+                    self.outputs, self.dec_states = tf.nn.dynamic_rnn(self.dec_cell, self.dec_input_embeddings, initial_state=self.enc_hidden, sequence_length=self.y_sequence_length, dtype=tf.float32)
             elif cell_type == 'bi-lstm':
                 self.fw_enc_hidden, self.bw_enc_hidden = self.enc_hidden
                 c = tf.concat([self.fw_enc_hidden.c, self.bw_enc_hidden.c], 1)
@@ -82,7 +84,10 @@ class SEQ2SEQ(object):
                 ##
                 self.dec_cell = tf.nn.rnn_cell.BasicLSTMCell(n_hidden*2)
                 self.dec_cell = tf.nn.rnn_cell.DropoutWrapper(self.dec_cell, output_keep_prob=self.out_keep_prob)
-                self.outputs, self.dec_states = tf.nn.dynamic_rnn(self.dec_cell, self.dec_input_embeddings, initial_state=self.add_enc_hidden, sequence_length=self.y_sequence_length, dtype=tf.float32)
+                if attention is True:
+                    print
+                else:
+                    self.outputs, self.dec_states = tf.nn.dynamic_rnn(self.dec_cell, self.dec_input_embeddings, initial_state=self.add_enc_hidden, sequence_length=self.y_sequence_length, dtype=tf.float32)
             self.logits = tf.layers.dense(self.outputs, n_class, activation=None, reuse=tf.AUTO_REUSE, name='output_layer')
             # loss
             self.t_mask = tf.sequence_mask(self.t_sequence_length, tf.shape(self.targets)[1])
