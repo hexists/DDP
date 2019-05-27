@@ -13,7 +13,6 @@ END_SYMBOL = '$'
 PAD_SYMBOL = '+'
 UNK_SYMBOL = '?'
 
-
 class SEQ2SEQ:
     def __init__(self, inp_voc_size, out_voc_size, out_max_len, n_hidden, dec_end_idx, embedding=False):
         # 입력과 출력의 형태가 one-hot 인코딩으로 같으므로 크기도 같다.
@@ -63,7 +62,7 @@ class SEQ2SEQ:
 
         # 인코더 셀을 구성한다.
         with tf.variable_scope('encode'):
-            self.enc_cell = tf.nn.rnn_cell.LSTMCell(self.n_hidden)
+            self.enc_cell = tf.nn.rnn_cell.LSTMCell(self.n_hidden, name='basic_lstm_cell')
             self.enc_cell = tf.nn.rnn_cell.DropoutWrapper(self.enc_cell, output_keep_prob=self.output_keep_prob)
             if embedding is True:
                 self.enc_input_embedding = tf.nn.embedding_lookup(params=self.enc_embedding, ids=self.enc_input, name='enc_input_embedding')
@@ -73,7 +72,7 @@ class SEQ2SEQ:
        
         # 디코더 셀을 구성한다.
         with tf.variable_scope('decode'):
-            self.dec_cell = tf.nn.rnn_cell.LSTMCell(self.n_hidden)
+            self.dec_cell = tf.nn.rnn_cell.LSTMCell(self.n_hidden, name='basic_lstm_cell')
             self.dec_cell = tf.nn.rnn_cell.DropoutWrapper(self.dec_cell, output_keep_prob=self.output_keep_prob)
             # Seq2Seq 모델은 인코더 셀의 최종 상태값을
             # 디코더 셀의 초기 상태값으로 넣어주는 것이 핵심.
@@ -183,9 +182,9 @@ def split_data(inp_ids, out_ids, tgt_ids, dev_per=0.1):
     tgt_shuf = tgt_ids[shuf_idxs]
 
     dev_idx = int(dev_per * len_inp_ids)
-    t_inp_ids, v_inp_ids = inp_ids[:dev_idx], inp_ids[dev_idx:]
-    t_out_ids, v_out_ids = out_ids[:dev_idx], out_ids[dev_idx:]
-    t_tgt_ids, v_tgt_ids = tgt_ids[:dev_idx], tgt_ids[dev_idx:]
+    t_inp_ids, v_inp_ids = inp_shuf[:dev_idx], inp_shuf[dev_idx:]
+    t_out_ids, v_out_ids = out_shuf[:dev_idx], out_shuf[dev_idx:]
+    t_tgt_ids, v_tgt_ids = tgt_shuf[:dev_idx], tgt_shuf[dev_idx:]
 
     train = np.stack((t_inp_ids, t_out_ids, t_tgt_ids), axis=1)
     valid = np.stack((v_inp_ids, v_out_ids, v_tgt_ids), axis=1)
@@ -255,16 +254,18 @@ def transliterate(word, embedding=False):
 ######
 learning_rate = 0.001
 n_hidden = 128
-total_epoch = 100
+total_epoch = 200
 batch_size = 64
 
 
 ## DATA LOAD
 path = './pickle/seq2seq.pickle'
 (inp_ids, out_ids, tgt_ids), (inp_max_len, out_max_len, tgt_max_len), (inp_voc2idx, out_voc2idx), (inp_idx2voc, out_idx2voc) = load_preprocessed(path)
+
 inp_voc_size, out_voc_size = len(inp_voc2idx), len(out_voc2idx)
 train_set, valid_set = split_data(inp_ids, out_ids, tgt_ids)
 train_set_len, valid_set_len = len(train_set), len(valid_set)
+
 batches = batch_iter(train_set, train_set_len, batch_size, total_epoch)
 
 DEBUG_MODE = False
@@ -292,7 +293,7 @@ with tf.Graph().as_default():
         valid_summary_dir = os.path.join(out_dir, "summaries", "valid")
         valid_summary_writer = tf.summary.FileWriter(valid_summary_dir, sess.graph)
 
-        sess.run(tf.global_variables_initializer())  # tf.Variable 초기화
+        sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))  # tf.Variable 초기화
 
         pad_idx = inp_voc2idx[PAD_SYMBOL]
 
@@ -307,11 +308,6 @@ with tf.Graph().as_default():
                 inp_bat_one_hot, inp_bat_len = pad_and_one_hot(inp_bat, inp_max_len, inp_voc_size, pad_idx)
                 out_bat_one_hot, out_bat_len = pad_and_one_hot(out_bat, out_max_len, out_voc_size, pad_idx)
                 tgt_bat_pad, tgt_bat_len = pad_and_one_hot(tgt_bat, tgt_max_len, out_voc_size, pad_idx, only_pad=True)
-
-            # print('epoch = {}, batch = {}'.format(epoch, len(batch)))
-            # print('out_bat_one_hot = {}'.format(np.shape(out_bat_one_hot)))
-            # print('inp_bat_one_hot = {}'.format(np.shape(inp_bat_one_hot)))
-            # print('tgt_bat_pad = {}'.format(np.shape(tgt_bat_pad)))
 
             feed = {seq2seq.enc_input: inp_bat_one_hot,
                 seq2seq.dec_input: out_bat_one_hot,
@@ -368,6 +364,7 @@ with tf.Graph().as_default():
                         else:
                             inp_bat_one_hot, inp_bat_len = pad_and_one_hot(inp_bat, inp_max_len, inp_voc_size, pad_idx)
                             out_bat_one_hot, out_bat_len = pad_and_one_hot(out_bat, out_max_len, out_voc_size, pad_idx)
+
                         tgt_bat_pad, tgt_bat_len = pad_and_one_hot(tgt_bat, tgt_max_len, out_voc_size, pad_idx, only_pad=True)
                         # print('v_epoch = {}'.format(v_epoch))
                         # print('v_inp_bat_one_hot = {}'.format(np.shape(inp_bat_one_hot)))
