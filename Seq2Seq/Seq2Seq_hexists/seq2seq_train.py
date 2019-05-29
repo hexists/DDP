@@ -182,9 +182,11 @@ def split_data(inp_ids, out_ids, tgt_ids, dev_per=0.1):
     tgt_shuf = tgt_ids[shuf_idxs]
 
     dev_idx = int(dev_per * len_inp_ids)
-    t_inp_ids, v_inp_ids = inp_shuf[:dev_idx], inp_shuf[dev_idx:]
-    t_out_ids, v_out_ids = out_shuf[:dev_idx], out_shuf[dev_idx:]
-    t_tgt_ids, v_tgt_ids = tgt_shuf[:dev_idx], tgt_shuf[dev_idx:]
+    t_inp_ids, v_inp_ids = inp_shuf[dev_idx:], inp_shuf[:dev_idx]
+    t_out_ids, v_out_ids = out_shuf[dev_idx:], out_shuf[:dev_idx]
+    t_tgt_ids, v_tgt_ids = tgt_shuf[dev_idx:], tgt_shuf[:dev_idx]
+    print(len(t_inp_ids))
+    print(len(v_inp_ids))
 
     train = np.stack((t_inp_ids, t_out_ids, t_tgt_ids), axis=1)
     valid = np.stack((v_inp_ids, v_out_ids, v_tgt_ids), axis=1)
@@ -214,8 +216,8 @@ def pad_and_one_hot(batch, max_len, dic_len, pad_idx, only_pad=False):
     n_batches = []
     n_lengths = []
     for bat in batch:
-        bat = np.pad(bat, (0, max_len - len(bat)), 'constant')
         n_lengths.append(len(bat))
+        bat = np.pad(bat, (0, max_len - len(bat)), 'constant')
         if only_pad is True:
             n_batches.append(bat)
         else:
@@ -253,7 +255,7 @@ def transliterate(word, embedding=False):
 # 옵션 설정
 ######
 learning_rate = 0.001
-n_hidden = 128
+n_hidden = 256
 total_epoch = 200
 batch_size = 64
 
