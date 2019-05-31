@@ -27,30 +27,21 @@ class SEQ2SEQ:
                 # [batch size, time steps]
                 self.enc_input = tf.placeholder(tf.int32, [None, None], name='enc_input')
                 self.dec_input = tf.placeholder(tf.int32, [None, None], name='dec_input')
-                self.inf_dec_input = tf.placeholder(tf.int32, [None, None], name='inf_dec_input')
-                self.enc_initializer = tf.contrib.layers.xavier_initializer()
+                self.initializer = tf.contrib.layers.xavier_initializer()
                 self.enc_embedding = tf.get_variable(name='enc_embedding',
                                                     shape=[self.inp_voc_size, self.embedding_size],
                                                     dtype=tf.float32,
-                                                    initializer=self.enc_initializer,
+                                                    initializer=self.initializer,
                                                     trainable=True)
-                self.dec_initializer = tf.contrib.layers.xavier_initializer()
                 self.dec_embedding = tf.get_variable(name='dec_embedding',
                                                     shape=[self.out_voc_size, self.embedding_size],
                                                     dtype=tf.float32,
-                                                    initializer=self.dec_initializer,
-                                                    trainable=True)
-                self.inf_dec_initializer = tf.contrib.layers.xavier_initializer()
-                self.inf_dec_embedding = tf.get_variable(name='inf_dec_embedding',
-                                                    shape=[self.out_voc_size, self.embedding_size],
-                                                    dtype=tf.float32,
-                                                    initializer=self.inf_dec_initializer,
+                                                    initializer=self.initializer,
                                                     trainable=True)
             else:
                 # [batch size, time steps, input size]
                 self.enc_input = tf.placeholder(tf.float32, [None, None, inp_voc_size], name='enc_input')
                 self.dec_input = tf.placeholder(tf.float32, [None, None, out_voc_size], name='dec_input')
-                self.inf_dec_input = tf.placeholder(tf.float32, [None, None, out_voc_size], name='inf_dec_input')
 
             self.enc_input_len = tf.placeholder(tf.int64, [None], name='enc_input_len')
             self.dec_input_len = tf.placeholder(tf.int64, [None], name='dec_input_len')
@@ -127,8 +118,8 @@ class SEQ2SEQ:
         def infer_body(i, inp_dec_state, inp_pred_output, output_tensor_t):
             with tf.variable_scope('decode'): 
                 if embedding is True:
-                    inf_dec_input_embedding = tf.nn.embedding_lookup(params=self.inf_dec_embedding, ids=inp_pred_output, name='inf_dec_input_embedding')
-                    dec_output, dec_state = tf.nn.dynamic_rnn(self.dec_cell, inf_dec_input_embedding, 
+                    dec_input_embedding = tf.nn.embedding_lookup(params=self.dec_embedding, ids=inp_pred_output, name='dec_input_embedding')
+                    dec_output, dec_state = tf.nn.dynamic_rnn(self.dec_cell, dec_input_embedding, 
                                                                 initial_state=inp_dec_state, dtype=tf.float32)
                 else:
                     dec_output, dec_state = tf.nn.dynamic_rnn(self.dec_cell, inp_pred_output, 
@@ -151,7 +142,7 @@ class SEQ2SEQ:
         _, _, _, self.output_tensor_t = tf.while_loop(
             cond = infer_cond,
             body = infer_body,
-            loop_vars = [tf.constant(0), self.enc_states, self.inf_dec_input, self.output_tensor_t]
+            loop_vars = [tf.constant(0), self.enc_states, self.dec_input, self.output_tensor_t]
             )
 
         self.inference = self.output_tensor_t.stack()
@@ -232,12 +223,12 @@ def transliterate(word, embedding=False):
 
     if embedding is True:
         pred = [[out_voc2idx[START_SYMBOL]]]
-        result = sess.run(seq2seq.inference, feed_dict={seq2seq.enc_input: [word_ids], seq2seq.enc_input_len:word_len, seq2seq.inf_dec_input:pred, seq2seq.output_keep_prob:1.0})
+        result = sess.run(seq2seq.inference, feed_dict={seq2seq.enc_input: [word_ids], seq2seq.enc_input_len:word_len, seq2seq.dec_input:pred, seq2seq.output_keep_prob:1.0})
     else:
         word_one_hot = [np.eye(inp_voc_size)[word_ids]]
         pred_one_hot = [[np.eye(out_voc_size)[out_voc2idx[START_SYMBOL]]]]
 
-        result = sess.run(seq2seq.inference, feed_dict={seq2seq.enc_input: word_one_hot, seq2seq.enc_input_len:word_len, seq2seq.inf_dec_input:pred_one_hot, seq2seq.output_keep_prob:1.0})
+        result = sess.run(seq2seq.inference, feed_dict={seq2seq.enc_input: word_one_hot, seq2seq.enc_input_len:word_len, seq2seq.dec_input:pred_one_hot, seq2seq.output_keep_prob:1.0})
 
     # 결과 값인 숫자의 인덱스에 해당하는 글자를 가져와 글자 배열을 만든다.
     decoded = [out_idx2voc[i] for i in result]
@@ -323,6 +314,8 @@ with tf.Graph().as_default():
                 feed_inp = {
                     'inp_bat': seq2seq.enc_input,
                     'out_bat': seq2seq.dec_input,
+                    'inp_bat_len': seq2seq.enc_input_len,
+                    'out_bat_len': seq2seq.dec_input_len,
                     'tgt_bat': seq2seq.targets,
                     'model': seq2seq.model,
                     'seq_mask': seq2seq.seq_mask,
@@ -379,7 +372,7 @@ with tf.Graph().as_default():
                             seq2seq.enc_input_len: inp_bat_len,
                             seq2seq.dec_input_len: out_bat_len,
                             seq2seq.tgt_input_len: tgt_bat_len,
-                            seq2seq.output_keep_prob: 1}
+                            seq2seq.output_keep_prob: 1.}
 
                         valid_loss, valid_acc, valid_summary, keep_prob = sess.run([seq2seq.loss, seq2seq.accuracy, summary_merge, seq2seq.output_keep_prob],
                                            feed_dict=feed)
