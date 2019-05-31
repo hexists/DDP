@@ -4,13 +4,7 @@ import os
 import sys
 import pickle
 import numpy as np
-
-
-START_SYMBOL = '^'
-END_SYMBOL = '$'
-PAD_SYMBOL = '+'
-UNK_SYMBOL = '?'
-SYMBOLS = {PAD_SYMBOL: 0, END_SYMBOL: 1, UNK_SYMBOL: 2, START_SYMBOL: 3}
+from utils import *
 
 
 def load_data(path):
