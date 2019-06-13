@@ -6,7 +6,8 @@ import time
 import os
 import sys
 import pickle
-from seq2seq_bilstm import *
+# from seq2seq_bilstm import *
+from seq2seq_attention import *
 from utils import *
 
 
@@ -113,6 +114,9 @@ def train(FLAGS, data):
                         'bi_enc_states_c': seq2seq.bi_enc_states_c,
                         'bi_enc_states_h': seq2seq.bi_enc_states_h,
                         'bi_enc_states': seq2seq.bi_enc_states,
+                        'fw_bw_enc_outputs': seq2seq.fw_bw_enc_outputs,
+                        'dec_outputs': seq2seq.dec_outputs,
+                        'dec_states': seq2seq.dec_states,
                         'seq_mask': seq2seq.seq_mask,
                         'losses': seq2seq.losses,
                         'masked_losses': seq2seq.masked_losses,
@@ -174,15 +178,16 @@ def train(FLAGS, data):
                         print('Valid_Epoch:', '%04d' % (epoch + 1),
                               'loss =', '{:.6f}'.format(valid_avg_loss),
                               'acc =', '{:.6f}'.format(valid_avg_acc))
-                        for word in words:
-                            print('{} -> {}'.format(word, transliterate(sess, seq2seq, word, data)))
+
+                        # for word in words:
+                        #     print('{} -> {}'.format(word, transliterate(sess, seq2seq, word, data)))
             
             
             print('최적화 완료!')
     
-            print('\n=== 번역 테스트 ===')
-            for word in words:
-                print('{} -> {}'.format(word, transliterate(sess, seq2seq, word, data)))
+            # print('\n=== 번역 테스트 ===')
+            # for word in words:
+            #     print('{} -> {}'.format(word, transliterate(sess, seq2seq, word, data)))
 
 
 if __name__ == '__main__':
