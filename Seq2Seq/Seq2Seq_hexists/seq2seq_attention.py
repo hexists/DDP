@@ -74,8 +74,6 @@ class SEQ2SEQ:
             # (time, batch, hidden)
             self.time_dec_input_embeddings = tf.transpose(self.dec_input_embeddings, [1, 0, 2])
 
-            self.dec_end_idx = tf.constant([[dec_end_idx]], tf.int32)
-
             def dec_cond(i, time_dec_input_embeddings, before_states, fw_bw_enc_outputs, outputs):
                 def ret_true():
                     return True
@@ -83,13 +81,20 @@ class SEQ2SEQ:
                     return False
                 # def is_less():
                 return tf.cond(tf.less(i, self.out_max_len), ret_true, ret_false)
-                # return tf.cond(tf.reshape(tf.equal(self.dec_end_idx, dec_output), []), ret_false, is_less)
 
+            '''
+            static variable
+            - time_dec_input_embeddings
+            - fw_bw_enc_outputs
+            '''
             def dec_body(i, time_dec_input_embeddings, before_states, fw_bw_enc_outputs, outputs):
+                # (batch, embedding)
                 context_vector = self.bahdanau_attention(before_states.h, fw_bw_enc_outputs)
                 # (batch, 1, hidden)
                 dec_input = tf.transpose(tf.gather_nd(time_dec_input_embeddings, [[i]]), [1,0,2])
+                # (batch, 1, embedding)
                 dec_context = tf.expand_dims(context_vector, 1)
+                # (batch, 1, hidden + embedding)
                 dec_input = tf.concat([dec_context, dec_input], axis=-1) 
                 dec_outputs, dec_states = tf.nn.dynamic_rnn(self.dec_cell, dec_input, initial_state=before_states, dtype=tf.float32)
 
@@ -129,6 +134,56 @@ class SEQ2SEQ:
             self.masked_correct_predictions = tf.boolean_mask(self.correct_predictions, self.seq_mask)
             self.accuracy = tf.reduce_mean(tf.cast(self.masked_correct_predictions, "float"), name="accuracy")
             tf.summary.scalar('accuracy', self.accuracy)
+
+        ##### INFERENCE
+        self.dec_end_idx = tf.constant([[dec_end_idx]], tf.int32)
+
+        def infer_cond(i, before_states, pred, fw_bw_enc_outputs, dec_end_idx, outputs):
+            def ret_true():
+                return True
+            def ret_false():
+                return False
+            def is_less():
+                return tf.cond(tf.less(i, self.out_max_len), ret_true, ret_false)
+
+            return tf.cond(tf.reshape(tf.equal(dec_end_idx, pred), []), ret_false, is_less)
+        
+        '''
+        static variable
+        - fw_bw_enc_outputs
+        - out_voc_size
+        - dec_end_idx
+        '''
+        def infer_body(i, before_states, pred, fw_bw_enc_outputs, dec_end_idx, outputs):
+            with tf.variable_scope('decode'): 
+                # (batch, embedding)
+                context_vector = self.bahdanau_attention(before_states.h, fw_bw_enc_outputs)
+                # (batch, 1, hidden)
+                dec_input = tf.nn.embedding_lookup(params=self.dec_embedding, ids=pred, name='dec_input_embedding')
+                # (batch, 1, embedding)
+                dec_context = tf.expand_dims(context_vector, 1)
+                # (batch, 1, hidden + embedding)
+                dec_input = tf.concat([dec_context, dec_input], axis=-1) 
+
+                dec_output, dec_state = tf.nn.dynamic_rnn(self.dec_cell, dec_input, initial_state=before_states, dtype=tf.float32)
+                model = tf.layers.dense(dec_output, self.out_voc_size, activation=None, reuse=tf.AUTO_REUSE)
+
+                pred = tf.argmax(model, 2, output_type=tf.int32)
+
+                outputs = outputs.write(i, pred)
+
+            return [i + 1, dec_state, pred, fw_bw_enc_outputs, dec_end_idx, outputs]
+
+        self.infer_outputs = tf.TensorArray(tf.int32, size = self.out_max_len, name='infer_outputs')
+
+        _, _, _, _, _, self.infer_outputs = tf.while_loop(
+            cond = infer_cond,
+            body = infer_body,
+            loop_vars = [tf.constant(0), self.bi_enc_states, self.dec_input, self.fw_bw_enc_outputs, self.dec_end_idx, self.infer_outputs]
+            )
+
+        self.inference = self.infer_outputs.stack()
+        self.inference = tf.reshape(self.inference, [-1])
 
 
     def bahdanau_attention(self, query, values):

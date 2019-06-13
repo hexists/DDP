@@ -179,15 +179,15 @@ def train(FLAGS, data):
                               'loss =', '{:.6f}'.format(valid_avg_loss),
                               'acc =', '{:.6f}'.format(valid_avg_acc))
 
-                        # for word in words:
-                        #     print('{} -> {}'.format(word, transliterate(sess, seq2seq, word, data)))
+                        for word in words:
+                            print('{} -> {}'.format(word, transliterate(sess, seq2seq, word, data)))
             
             
             print('최적화 완료!')
     
-            # print('\n=== 번역 테스트 ===')
-            # for word in words:
-            #     print('{} -> {}'.format(word, transliterate(sess, seq2seq, word, data)))
+            print('\n=== 번역 테스트 ===')
+            for word in words:
+                print('{} -> {}'.format(word, transliterate(sess, seq2seq, word, data)))
 
 
 if __name__ == '__main__':
