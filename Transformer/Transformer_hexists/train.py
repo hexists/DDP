@@ -10,6 +10,9 @@ from transformer import *
 from utils import *
 
 
+# np.set_printoptions(threshold=np.inf)
+
+
 params = {}
 
 
@@ -31,25 +34,43 @@ def get_idx2voc(result, data, result_type='output'):
     return ret
 
 
-def transliterate(sess, seq2seq, word, data):
+def transliterate(sess, transformer, word, data):
     inp_voc2idx, out_voc2idx, out_idx2voc = data['inp_voc2idx'], data['out_voc2idx'], data['out_idx2voc']
+    inp_max_len, out_max_len = data['inp_max_len'], data['out_max_len']
+    inp_voc_size, out_voc_size = data['inp_voc_size'], data['out_voc_size']
+    pad_idx = inp_voc2idx[PAD_SYMBOL]
 
-    transliterated = []
-    word_ids = [inp_voc2idx[w] for w in word]
-    word_len = [len(word_ids)]
+    inp_bat = [[inp_voc2idx[w] for w in word]]
+    out_bat = [[out_voc2idx[START_SYMBOL]]]
 
-    pred = [[out_voc2idx[START_SYMBOL]]]
-    result = sess.run(seq2seq.inference, feed_dict={seq2seq.enc_input: [word_ids], seq2seq.enc_input_len:word_len, seq2seq.dec_input:pred, seq2seq.output_keep_prob:1.0})
+    inp_bat_pad, inp_bat_len = pad_and_one_hot(inp_bat, inp_max_len, inp_voc_size, pad_idx, only_pad=True)
 
-    # 결과 값인 숫자의 인덱스에 해당하는 글자를 가져와 글자 배열을 만든다.
-    decoded = [out_idx2voc[i] for i in result]
+    for i in range(out_max_len):
+        print('\t{}\t{}'.format(i, out_bat))
+        out_bat_pad, out_bat_len = pad_and_one_hot(out_bat, out_max_len, out_voc_size, pad_idx, only_pad=True)
 
-    # 출력의 끝을 의미하는 'E' 이후의 글자들을 제거하고 문자열로 만든다.
-    try:
-        end = decoded.index('$')
-        ret = ''.join(decoded[:end])
-    except:
-        ret = ''.join(decoded)
+        feed = {transformer.enc_input: inp_bat_pad,
+                transformer.dec_input: out_bat_pad,
+                transformer.enc_input_len: inp_bat_len,
+                transformer.dec_input_len: out_bat_len,
+                transformer.dropout_rate: 0.}
+    
+        # (batch, out_seq_len)
+        predictions = sess.run(transformer.predictions, feed_dict=feed)
+        print('\t{}\tpredictions = {}'.format(i, predictions[0]))
+    
+        predicted_id = predictions[0][i]
+        print('\t{}\tpredicted_id = {}'.format(i, predicted_id))
+
+        if predicted_id == out_voc2idx[END_SYMBOL]:
+            break
+
+        out_bat = np.concatenate([out_bat, [[predicted_id]]], axis=-1)
+
+    print('\tFINAL out_bat = {}'.format(out_bat[0][1:]))
+    decoded = [out_idx2voc[i] for i in out_bat[0][1:]]
+    ret = ''.join(decoded)
+
     return ret
 
 
@@ -77,7 +98,8 @@ def train(FLAGS, data):
 
     batches = batch_iter(train_set, train_set_len, FLAGS.batch_size, FLAGS.num_epochs)
     
-    words = ['ichadwick', 'peoria', 'whitepine', 'pancake', 'balloon', 'solen', 'richard', 'hubbard', 'mattox', 'stendhal']
+    # words = ['ichadwick', 'peoria', 'whitepine', 'pancake', 'balloon', 'solen', 'richard', 'hubbard', 'mattox', 'stendhal']
+    words = ['ichadwick']
     
     with tf.Graph().as_default():
         session_conf = tf.ConfigProto(allow_soft_placement=FLAGS.allow_soft_placement, log_device_placement=FLAGS.log_device_placement)
@@ -201,18 +223,17 @@ def train(FLAGS, data):
                         print('Valid_Epoch:', '%04d' % (epoch + 1),
                               'loss =', '{:.6f}'.format(valid_avg_loss),
                               'acc =', '{:.6f}'.format(valid_avg_acc))
-
-                        print('{} -> {}'.format(get_idx2voc(inp_bat[0], data, 'input'), get_idx2voc(valid_prediction[0], data, 'output')))
-
-                        # for word in words:
-                        #     print('{} -> {}'.format(word, transliterate(sess, transformer, word, data)))
-            
+                        test_word = get_idx2voc(inp_bat[0], data, 'input')
+                        print('BATCH\t{} -> {}'.format(test_word, get_idx2voc(valid_prediction[0], data, 'output')))
+                        print('INFER\t{} -> {}'.format(test_word, transliterate(sess, transformer, test_word, data)))
+                        #for word in words:
+                        #    print('{} -> {}'.format(word, transliterate(sess, transformer, word, data)))
             
             print('최적화 완료!')
     
-            # print('\n=== 번역 테스트 ===')
-            # for word in words:
-            #     print('{} -> {}'.format(word, transliterate(sess, transformer, word, data)))
+            print('\n=== 번역 테스트 ===')
+            for word in words:
+                print('{} -> {}'.format(word, transliterate(sess, transformer, word, data)))
 
 
 if __name__ == '__main__':
