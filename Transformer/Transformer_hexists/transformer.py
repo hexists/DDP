@@ -38,8 +38,13 @@ def create_masks(inp, tar):
     # Used in the 1st attention block in the decoder.
     # It is used to pad and mask future tokens in the input received by 
     # the decoder.
+
+    # look_ahead_mask: (seq, seq)
     look_ahead_mask = create_look_ahead_mask(tf.shape(tar)[1])
+    # dec_target_padding_mask: (batch, 1, 1, seq)
     dec_target_padding_mask = create_padding_mask(tar)
+    # combined_mask: (batch, 1, seq, seq)
+    # value가 있는 곳만 0으로 되어 있음
     combined_mask = tf.maximum(dec_target_padding_mask, look_ahead_mask)
     
     return enc_padding_mask, combined_mask, dec_padding_mask
