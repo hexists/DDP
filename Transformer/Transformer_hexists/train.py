@@ -31,6 +31,10 @@ def get_idx2voc(result, data, result_type='output'):
         ret = ''.join(decoded[:end])
     except:
         ret = ''.join(decoded)
+
+    if ret == '':
+        ret = 'None'
+
     return ret
 
 
@@ -41,36 +45,40 @@ def transliterate(sess, transformer, word, data):
     pad_idx = inp_voc2idx[PAD_SYMBOL]
 
     inp_bat = [[inp_voc2idx[w] for w in word]]
-    out_bat = [[out_voc2idx[START_SYMBOL]]]
-
     inp_bat_pad, inp_bat_len = pad_and_one_hot(inp_bat, inp_max_len, inp_voc_size, pad_idx, only_pad=True)
+    out_bat_pad = [[out_voc2idx[START_SYMBOL]]]
+    out_bat_len = [len(out_bat_pad[0])]
 
     for i in range(out_max_len):
-        print('\t{}\t{}'.format(i, out_bat))
-        out_bat_pad, out_bat_len = pad_and_one_hot(out_bat, out_max_len, out_voc_size, pad_idx, only_pad=True)
-
+        # print('{}\tout_bat_pad = {}'.format(i, out_bat_pad))
         feed = {transformer.enc_input: inp_bat_pad,
-                transformer.dec_input: out_bat_pad,
                 transformer.enc_input_len: inp_bat_len,
+                transformer.dec_input: out_bat_pad,
                 transformer.dec_input_len: out_bat_len,
-                transformer.dropout_rate: 0.}
-    
-        # (batch, out_seq_len)
-        predictions = sess.run(transformer.predictions, feed_dict=feed)
-        print('\t{}\tpredictions = {}'.format(i, predictions[0]))
-    
-        predicted_id = predictions[0][i]
-        print('\t{}\tpredicted_id = {}'.format(i, predicted_id))
+                transformer.dropout_rate: 0.,
+                transformer.training: False}
+        infer_enc_output, infer_predictions = sess.run([transformer.enc_output, transformer.predictions], feed)
+        infer_predicted_id = infer_predictions[0][-1]
 
-        if predicted_id == out_voc2idx[END_SYMBOL]:
+        if infer_predicted_id == out_voc2idx[END_SYMBOL]:
             break
 
-        out_bat = np.concatenate([out_bat, [[predicted_id]]], axis=-1)
+        # print('{}\tinfer_predictions = {}'.format(i+1, infer_predictions))
+        # print('{}\tinfer_predicted_id = {}'.format(i+1, infer_predicted_id))
+        out_bat_pad = np.concatenate([out_bat_pad, [[infer_predicted_id]]], axis=-1)
+        out_bat_len = [len(out_bat_pad[0])]
 
-    print('\tFINAL out_bat = {}'.format(out_bat[0][1:]))
-    decoded = [out_idx2voc[i] for i in out_bat[0][1:]]
-    ret = ''.join(decoded)
+    # infer_sample = get_idx2voc(infer_predictions[0], data)
+    infer_out_bat = get_idx2voc(out_bat_pad[0], data)[1:]
 
+    try:
+        end = infer_out_bat.index('$')
+        ret = ''.join(nfer_out_bat[:end])
+    except:
+        ret = ''.join(infer_out_bat)
+
+    if ret == '':
+        ret = 'None'
     return ret
 
 
@@ -98,8 +106,7 @@ def train(FLAGS, data):
 
     batches = batch_iter(train_set, train_set_len, FLAGS.batch_size, FLAGS.num_epochs)
     
-    # words = ['ichadwick', 'peoria', 'whitepine', 'pancake', 'balloon', 'solen', 'richard', 'hubbard', 'mattox', 'stendhal']
-    words = ['ichadwick']
+    words = ['ichadwick', 'peoria', 'whitepine', 'pancake', 'balloon', 'solen', 'richard', 'hubbard', 'mattox', 'stendhal']
     
     with tf.Graph().as_default():
         session_conf = tf.ConfigProto(allow_soft_placement=FLAGS.allow_soft_placement, log_device_placement=FLAGS.log_device_placement)
@@ -111,7 +118,9 @@ def train(FLAGS, data):
                       'inp_max_len': inp_max_len,
                       'out_max_len': out_max_len,
                       'n_hidden': FLAGS.embedding_dim,
-                      'dec_end_idx': out_voc2idx[END_SYMBOL]}
+                      'dec_end_idx': out_voc2idx[END_SYMBOL],
+                      'num_layers': 1,
+                      'num_heads': 8}
             transformer = Transformer(params)
             optimizer = tf.train.AdamOptimizer(FLAGS.learning_rate).minimize(transformer.loss)
     
@@ -145,7 +154,8 @@ def train(FLAGS, data):
                     transformer.enc_input_len: inp_bat_len,
                     transformer.dec_input_len: out_bat_len,
                     transformer.tgt_input_len: tgt_bat_len,
-                    transformer.dropout_rate: (1 - FLAGS.dropout_keep_prob)}
+                    transformer.dropout_rate: (1 - FLAGS.dropout_keep_prob),
+                    transformer.training: True}
     
                 if FLAGS.debug_mode is True:
                     feed_inp = {
@@ -175,14 +185,14 @@ def train(FLAGS, data):
                     print()
                     break
                 else:
-                    _, train_loss, train_acc, train_summary, dropout_rate = sess.run([optimizer, transformer.loss, transformer.accuracy, summary_merge, transformer.dropout_rate],
+                    _, train_loss, train_acc, train_summary, dropout_rate, predictions = sess.run([optimizer, transformer.loss, transformer.accuracy, summary_merge, transformer.dropout_rate, transformer.predictions],
                                        feed_dict=feed)
-            
+
                     train_summary_writer.add_summary(train_summary, epoch)
     
                     t_losses.append(train_loss)
                     t_accs.append(train_acc)
-    
+
                     if epoch % 100 == 0:
                         train_avg_loss = np.mean(t_losses)
                         train_avg_acc = np.mean(t_accs)
@@ -194,12 +204,10 @@ def train(FLAGS, data):
                         v_batches = batch_iter(valid_set, valid_set_len, FLAGS.batch_size, 1)
                         v_losses, v_accs = [], []
                         for v_epoch, v_batch in enumerate(v_batches):
-                            inp_bat, out_bat, tgt_bat = zip(*v_batch)
-                            inp_bat_pad, inp_bat_len = pad_and_one_hot(inp_bat, inp_max_len, inp_voc_size, pad_idx, only_pad=True)
-                            out_bat_pad, out_bat_len = pad_and_one_hot(out_bat, out_max_len, out_voc_size, pad_idx, only_pad=True)
-                            tgt_bat_pad, tgt_bat_len = pad_and_one_hot(tgt_bat, tgt_max_len, out_voc_size, pad_idx, only_pad=True)
-
-                            # print('v_epoch = {}, inp_bat_pad = {}, out_bat_pad = {}, tgt_bat_pad = {}'.format(v_epoch, np.shape(inp_bat_pad), np.shape(out_bat_pad), np.shape(tgt_bat_pad)))
+                            v_inp_bat, v_out_bat, v_tgt_bat = zip(*v_batch)
+                            inp_bat_pad, inp_bat_len = pad_and_one_hot(v_inp_bat, inp_max_len, inp_voc_size, pad_idx, only_pad=True)
+                            out_bat_pad, out_bat_len = pad_and_one_hot(v_out_bat, out_max_len, out_voc_size, pad_idx, only_pad=True)
+                            tgt_bat_pad, tgt_bat_len = pad_and_one_hot(v_tgt_bat, tgt_max_len, out_voc_size, pad_idx, only_pad=True)
 
                             feed = {transformer.enc_input: inp_bat_pad,
                                 transformer.dec_input: out_bat_pad,
@@ -207,7 +215,8 @@ def train(FLAGS, data):
                                 transformer.enc_input_len: inp_bat_len,
                                 transformer.dec_input_len: out_bat_len,
                                 transformer.tgt_input_len: tgt_bat_len,
-                                transformer.dropout_rate: 0.}
+                                transformer.dropout_rate: 0.,
+                                transformer.training: False}
     
                             valid_loss, valid_acc, valid_summary, dropout_rate, valid_prediction = sess.run([transformer.loss, transformer.accuracy, summary_merge, transformer.dropout_rate, transformer.predictions],
                                                feed_dict=feed)
@@ -223,12 +232,10 @@ def train(FLAGS, data):
                         print('Valid_Epoch:', '%04d' % (epoch + 1),
                               'loss =', '{:.6f}'.format(valid_avg_loss),
                               'acc =', '{:.6f}'.format(valid_avg_acc))
-                        test_word = get_idx2voc(inp_bat[0], data, 'input')
-                        print('BATCH\t{} -> {}'.format(test_word, get_idx2voc(valid_prediction[0], data, 'output')))
-                        print('INFER\t{} -> {}'.format(test_word, transliterate(sess, transformer, test_word, data)))
-                        #for word in words:
-                        #    print('{} -> {}'.format(word, transliterate(sess, transformer, word, data)))
-            
+
+                        for word in words:
+                            print('{} -> {}'.format(word, transliterate(sess, transformer, word, data)))
+
             print('최적화 완료!')
     
             print('\n=== 번역 테스트 ===')
