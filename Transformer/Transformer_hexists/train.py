@@ -50,25 +50,21 @@ def transliterate(sess, transformer, word, data):
     out_bat_len = [len(out_bat_pad[0])]
 
     for i in range(out_max_len):
-        # print('{}\tout_bat_pad = {}'.format(i, out_bat_pad))
         feed = {transformer.enc_input: inp_bat_pad,
                 transformer.enc_input_len: inp_bat_len,
                 transformer.dec_input: out_bat_pad,
                 transformer.dec_input_len: out_bat_len,
                 transformer.dropout_rate: 0.,
                 transformer.training: False}
-        infer_enc_output, infer_predictions = sess.run([transformer.enc_output, transformer.predictions], feed)
+        infer_predictions = sess.run(transformer.predictions, feed)
         infer_predicted_id = infer_predictions[0][-1]
 
         if infer_predicted_id == out_voc2idx[END_SYMBOL]:
             break
 
-        # print('{}\tinfer_predictions = {}'.format(i+1, infer_predictions))
-        # print('{}\tinfer_predicted_id = {}'.format(i+1, infer_predicted_id))
         out_bat_pad = np.concatenate([out_bat_pad, [[infer_predicted_id]]], axis=-1)
         out_bat_len = [len(out_bat_pad[0])]
 
-    # infer_sample = get_idx2voc(infer_predictions[0], data)
     infer_out_bat = get_idx2voc(out_bat_pad[0], data)[1:]
 
     try:
@@ -106,7 +102,7 @@ def train(FLAGS, data):
 
     batches = batch_iter(train_set, train_set_len, FLAGS.batch_size, FLAGS.num_epochs)
     
-    words = ['ichadwick', 'peoria', 'whitepine', 'pancake', 'balloon', 'solen', 'richard', 'hubbard', 'mattox', 'stendhal']
+    words = ['botanist', 'astrologer', 'and', 'general', 'occultist', 'he', 'is', 'credited', 'as', 'the', 'founder']
     
     with tf.Graph().as_default():
         session_conf = tf.ConfigProto(allow_soft_placement=FLAGS.allow_soft_placement, log_device_placement=FLAGS.log_device_placement)
@@ -119,8 +115,8 @@ def train(FLAGS, data):
                       'out_max_len': out_max_len,
                       'n_hidden': FLAGS.embedding_dim,
                       'dec_end_idx': out_voc2idx[END_SYMBOL],
-                      'num_layers': 1,
-                      'num_heads': 8}
+                      'num_layers': FLAGS.num_layers,
+                      'num_heads': FLAGS.num_heads}
             transformer = Transformer(params)
             optimizer = tf.train.AdamOptimizer(FLAGS.learning_rate).minimize(transformer.loss)
     
@@ -185,7 +181,7 @@ def train(FLAGS, data):
                     print()
                     break
                 else:
-                    _, train_loss, train_acc, train_summary, dropout_rate, predictions = sess.run([optimizer, transformer.loss, transformer.accuracy, summary_merge, transformer.dropout_rate, transformer.predictions],
+                    _, train_loss, train_acc, train_summary, predictions = sess.run([optimizer, transformer.loss, transformer.accuracy, summary_merge, transformer.predictions],
                                        feed_dict=feed)
 
                     train_summary_writer.add_summary(train_summary, epoch)
@@ -200,7 +196,7 @@ def train(FLAGS, data):
                         print('Epoch:', '%04d' % (epoch + 1),
                               'loss =', '{:.6f}'.format(train_avg_loss),
                               'acc =', '{:.6f}'.format(train_avg_acc))
-    
+
                         v_batches = batch_iter(valid_set, valid_set_len, FLAGS.batch_size, 1)
                         v_losses, v_accs = [], []
                         for v_epoch, v_batch in enumerate(v_batches):
@@ -218,8 +214,7 @@ def train(FLAGS, data):
                                 transformer.dropout_rate: 0.,
                                 transformer.training: False}
     
-                            valid_loss, valid_acc, valid_summary, dropout_rate, valid_prediction = sess.run([transformer.loss, transformer.accuracy, summary_merge, transformer.dropout_rate, transformer.predictions],
-                                               feed_dict=feed)
+                            valid_loss, valid_acc, valid_summary, valid_prediction = sess.run([transformer.loss, transformer.accuracy, summary_merge, transformer.predictions], feed_dict=feed)
                         
                             v_losses.append(valid_loss)
                             v_accs.append(valid_acc)
@@ -236,6 +231,7 @@ def train(FLAGS, data):
                         for word in words:
                             print('{} -> {}'.format(word, transliterate(sess, transformer, word, data)))
 
+
             print('최적화 완료!')
     
             print('\n=== 번역 테스트 ===')
@@ -250,7 +246,9 @@ if __name__ == '__main__':
     
     # Model Hyperparameters
     tf.flags.DEFINE_string('word2vec', None, 'Word2vec file with pre-trained embeddings (default: None)')
-    tf.flags.DEFINE_integer('embedding_dim', 256, 'Dimensionality of character embedding (default: 256)')
+    tf.flags.DEFINE_integer('embedding_dim', 128, 'Dimensionality of character embedding (default: 128)')
+    tf.flags.DEFINE_integer('num_layers', 2, 'num of layers (default: 2)')
+    tf.flags.DEFINE_integer('num_heads', 8, 'num of heads(default: 8)')
     tf.flags.DEFINE_float('dropout_keep_prob', 0.9, 'Dropout keep probability (default: 0.9)')
     tf.flags.DEFINE_float('learning_rate', 0.001, 'Learning Rate (default: 0.001)')
     
@@ -265,7 +263,7 @@ if __name__ == '__main__':
     tf.flags.DEFINE_boolean('allow_soft_placement', True, 'Allow device soft device placement')
     tf.flags.DEFINE_boolean('log_device_placement', False, 'Log placement of ops on devices')
     tf.flags.DEFINE_boolean('debug_mode', False, 'Set debug mode(default: False)')
-    
+
     FLAGS = tf.flags.FLAGS
     FLAGS(sys.argv)
 

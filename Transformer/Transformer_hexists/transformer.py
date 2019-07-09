@@ -161,14 +161,14 @@ def encoder_layer(params, x, mask, call_name):
         attn_output, _ = multi_head_attention(params, x, x, x, mask, '{}_mha'.format(call_name))
         attn_output = tf.layers.dropout(attn_output, dropout_rate, training=training, name='{}_dropout1'.format(call_name))
         # (batch_size, input_seq_len, d_model)
-        out1 = tf.contrib.layers.layer_norm(x + attn_output, scope='{}_layer_norm1'.format(call_name))
+        out1 = tf.contrib.layers.layer_norm(x + attn_output, begin_norm_axis=-1, scope='{}_layer_norm1'.format(call_name))
 
         # (batch_size, input_seq_len, d_model)
         ffn_output = point_wise_feed_forward_network(params, out1, '{}_ffn'.format(call_name))
         ffn_output = tf.layers.dropout(ffn_output, dropout_rate, training=training, name='{}_dropout2'.format(call_name))
 
         # (batch_size, input_seq_len, d_model)
-        out2 = tf.contrib.layers.layer_norm(out1 + ffn_output, scope='{}_layer_norm2'.format(call_name))
+        out2 = tf.contrib.layers.layer_norm(out1 + ffn_output, begin_norm_axis=-1, scope='{}_layer_norm2'.format(call_name))
 
         return out2
 
@@ -181,19 +181,19 @@ def decoder_layer(params, x, enc_output, look_ahead_mask, padding_mask, call_nam
         # (batch_size, target_seq_len, d_model)
         attn1, attn_weights_block1 = multi_head_attention(params, x, x, x, look_ahead_mask, '{}_mha1'.format(call_name))
         attn1 = tf.layers.dropout(attn1, dropout_rate, training=training, name='{}_dropout1'.format(call_name))
-        out1 = tf.contrib.layers.layer_norm(attn1 + x, scope='{}_layer_norm1'.format(call_name))
+        out1 = tf.contrib.layers.layer_norm(attn1 + x, begin_norm_axis=-1, scope='{}_layer_norm1'.format(call_name))
 
         # (batch_size, target_seq_len, d_model)
         attn2, attn_weights_block2 = multi_head_attention(params, enc_output, enc_output, out1, padding_mask, '{}_mha2'.format(call_name))
         attn2 = tf.layers.dropout(attn2, dropout_rate, training=training, name='{}_dropout2'.format(call_name))
         # (batch_size, target_seq_len, d_model)
-        out2 = tf.contrib.layers.layer_norm(attn2 + out1, scope='{}_layer_norm2'.format(call_name))
+        out2 = tf.contrib.layers.layer_norm(attn2 + out1, begin_norm_axis=-1, scope='{}_layer_norm2'.format(call_name))
 
         # (batch_size, target_seq_len, d_model)
         ffn_output = point_wise_feed_forward_network(params, out2, '{}_ffn'.format(call_name))
         ffn_output = tf.layers.dropout(ffn_output, dropout_rate, training=training, name='{}_dropout3'.format(call_name))
         # (batch_size, target_seq_len, d_model)
-        out3 = tf.contrib.layers.layer_norm(ffn_output + out2, scope='{}_layer_norm3'.format(call_name))
+        out3 = tf.contrib.layers.layer_norm(ffn_output + out2, begin_norm_axis=-1, scope='{}_layer_norm3'.format(call_name))
 
         return out3, attn_weights_block1, attn_weights_block2
 
@@ -260,9 +260,11 @@ class Transformer:
 
             # output
             self.enc_output = self.enc_input_embeddings
+            self.enc_outputs = {}
             self.enc_mask = self.enc_padding_mask
             for i in range(self.num_layers):
                 self.enc_output = encoder_layer(self.params, self.enc_output, self.enc_mask, 'encoder_layer_{}'.format(i))
+                self.enc_outputs[i] = self.enc_output
 
         # Decoder
         with tf.variable_scope('decoder'):
@@ -280,11 +282,14 @@ class Transformer:
 
             # output
             self.dec_output = self.dec_input_embeddings
+            self.dec_outputs = {}
             self.dec_look_ahead_mask = self.combined_mask
             self.dec_padding_mask = self.dec_padding_mask
             self.attention_weights = {}
+            self.dec_enc_output = self.enc_output
             for i in range(self.num_layers):
-                self.dec_output, self.block1, self.block2 = decoder_layer(self.params, self.dec_output, self.enc_output, self.dec_look_ahead_mask, self.dec_padding_mask, 'decoder_layer_{}'.format(i))
+                self.dec_output, self.block1, self.block2 = decoder_layer(self.params, self.dec_output, self.dec_enc_output, self.dec_look_ahead_mask, self.dec_padding_mask, 'decoder_layer_{}'.format(i))
+                self.dec_outputs[i] = self.dec_output
                 self.attention_weights['decoder_layer{}_block1'.format(i + 1)] = self.block1
                 self.attention_weights['decoder_layer{}_block2'.format(i + 1)] = self.block2
 
