@@ -132,6 +132,13 @@ def train(FLAGS, data):
     
             valid_summary_dir = os.path.join(out_dir, "summaries", "valid")
             valid_summary_writer = tf.summary.FileWriter(valid_summary_dir, sess.graph)
+
+            # Checkpoint directory. Tensorflow assumes this directory already exists so we need to create it
+            checkpoint_dir = os.path.abspath(os.path.join(out_dir, "checkpoints"))
+            checkpoint_prefix = os.path.join(checkpoint_dir, "model")
+            if not os.path.exists(checkpoint_dir):
+                os.makedirs(checkpoint_dir)
+            saver = tf.train.Saver(tf.global_variables(), max_to_keep=FLAGS.num_checkpoints)
     
             sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))  # tf.Variable 초기화
     
@@ -189,7 +196,7 @@ def train(FLAGS, data):
                     t_losses.append(train_loss)
                     t_accs.append(train_acc)
 
-                    if epoch % 100 == 0:
+                    if epoch % FLAGS.evaluate_every == 0:
                         train_avg_loss = np.mean(t_losses)
                         train_avg_acc = np.mean(t_accs)
                         t_losses, t_accs = [], []
@@ -230,6 +237,10 @@ def train(FLAGS, data):
 
                         for word in words:
                             print('{} -> {}'.format(word, transliterate(sess, transformer, word, data)))
+
+                    if epoch % FLAGS.checkpoint_every == 0:
+                        path = saver.save(sess, checkpoint_prefix, global_step=epoch)
+                        print("Saved model checkpoint to {}\n".format(path))
 
 
             print('최적화 완료!')
