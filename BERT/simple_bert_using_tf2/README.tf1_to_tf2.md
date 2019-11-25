@@ -1,4 +1,4 @@
-# How to convert pretrained tf1 pretrained BERT to tf2.
+# How to convert pretrained tf1 BERT to tf2.
 
 
 *아래 방법대로 변환은 문제 없으나, 실행이 안되서 문제 확인중이다.*
