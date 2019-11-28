@@ -1,0 +1,15 @@
+absl-py==0.8.1
+astor==0.8.0
+gast==0.3.2
+grpcio==1.25.0
+h5py==2.10.0
+Keras-Applications==1.0.8
+Keras-Preprocessing==1.1.0
+Markdown==3.1.1
+numpy==1.17.4
+protobuf==3.11.0
+six==1.13.0
+tensorboard==1.11.0
+tensorflow-gpu==1.11.0
+termcolor==1.1.0
+Werkzeug==0.16.0
